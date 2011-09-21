@@ -40,21 +40,21 @@ otp.config_defaults = {
 
         geocoder  :
         {
-            enabled : false,
-            url     : "/geocoder/geocode",  
+            enabled : true,
+            url     : "/opentripplanner-geocoder/geocode",  
             // debug-url : '/js/otp/planner/test/geo-zoo.xml',
             // debug-url : '/js/otp/planner/test/geo-multi.xml', 
             // debut-enabled : true,
             addressParamName : "address"
         },
-        fromToOverride : new Ext.Template('<div class="mapHelp">' + otp.config.locale.config.rightClickMsg + '</div>')
+        fromToOverride = null //: new Ext.Template('<div class="mapHelp">' + otp.config.locale.config.rightClickMsg + '</div>')
     },
 
     map : {
         // The default extent to zoom the map to when the web app loads.
         // This can either be an OpenLayers.Bounds object or the string "automatic"
         // If set to "automatic", the client will ask the server for the default extent.
-        defaultExtent: "automatic",
+        defaultExtent: new OpenLayers.Bounds( -82.4429, 28.0516, -82.3963, 28.0725),//OpenLayers.Bounds( -82.297659, 28.169292, -82.431497, 28.050622),//new OpenLayers.Bounds(-82.6111, 27.8254, -82.2976, 28.1001), //"automatic",
      
         // These options are passed directly to the OpenLayers.Map constructor.
         options : {
@@ -95,20 +95,22 @@ otp.config_defaults = {
 
     // when enabled, adds another item to the accordion for attribution
     attributionPanel : {
-        enabled         : false,
-        panelTitle      : otp.config.locale.config.attribution.title,
-        attributionHtml : '<p class="disclaimer">' + otp.config.locale.config.attribution.content + '</p>'
-    },
+        enabled         : true,
+        panelTitle      : 'Disclaimer',//otp.config.locale.config.attribution.title,
+        attributionHtml : '<p class="disclaimer">This website was created by the Center for Urban Transportation Research at the University of South Florida (USF) based on the OpenTripPlanner.org open-source project as part of a research effort funded by the Florida Department of Transportation (FDOT) and the National Center for Transit Research (NCTR).  USF, FDOT, and the NCTR disclaim any responsibility for the safety, design, and construction of the facilities and any negligent, intentional, or criminal acts related to the facilities.  It is assumed that the facilities will be used only by persons of sufficient age to assume the risks attendant that to this activity, who possess an adequate skill level as a driver, transit rider, bicyclist, or pedestrian, have knowledge of the applicable laws and will comply therewith.  This website is provided for recreational purposes only and the website sponsors do not warrant the accuracy of the information contained herein.<br /> <br />Please email us with any suggested improvements, problems with planning trips, or your desire to see such a trip planner for your community at <a href="mailto:opentripplanner@cutr.usf.edu">opentripplanner@cutr.usf.edu</a>.</p>'
+        	//'<p class="disclaimer">' + otp.config.locale.config.attribution.content + '</p>'
+      },
 
     // presents a dialog on initial startup of the app, with a message for your customers
     splashScreen : {
-        enabled: false,
+        enabled: true,
         timeout: 20,   // seconds to stay open - if <= ZERO, then dialog does not timeout and requires the customer to close the dialog
         title:   'Important: Please read',
         html:    '<p class="splash-screen">'
-                 + 'Please note that the trip routing presented here is for demonstration purposes of the <a href="http://opentripplanner.com" target="#">OpenTripPlanner (OTP)</a> only, '
-                 + 'and not intended as a travel resource.  You will begin to see improvements in the planned trips as the project matures.  A public beta is scheduled for spring 2011. '
-                 + '</p>'
+                 + 'Welcome to our OpenTripPlanner demo!  This website was created as part of a <a href="http://www.locationaware.usf.edu/ongoing-research/open-transit-data/" target="#">research project</a> to explore the current state-of-the-art in multimodal trip planning for transit, bike, and walking.  Please note that this is not intended as a travel resource, but as a tool to showcase the strengths and weaknesses of such as system using data from the Tampa area.  Please email us with any suggested improvements, problems with planning trips, or your desire to see such a trip planner for your community at <a href="mailto:opentripplanner@cutr.usf.edu">opentripplanner@cutr.usf.edu</a>.'
+            //+ 'Please note that the trip routing presented here is for demonstration purposes of the <a href="http://opentripplanner.com" target="#">OpenTripPlanner (OTP)</a> only, '
+            //+ 'and not intended as a travel resource.  You will begin to see improvements in the planned trips as the project matures.  A public beta is scheduled for spring 2011. '
+        	+ '</p>'
     },
 
     systemMap : {
