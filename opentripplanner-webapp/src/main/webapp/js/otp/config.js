@@ -49,7 +49,7 @@ otp.config_defaults = {
             // debut-enabled : true,
             addressParamName : "address"
         },
-        fromToOverride = null //: new Ext.Template('<div class="mapHelp">' + otp.config.locale.config.rightClickMsg + '</div>')
+        fromToOverride : null //: new Ext.Template('<div class="mapHelp">' + otp.config.locale.config.rightClickMsg + '</div>')
     },
 
     map : {
