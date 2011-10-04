@@ -253,7 +253,7 @@ otp.planner.TripTab = {
         console.log("TripTab.print: window focus");
         otp.planner.PrintTripWin.focus();
 
-        otp.util.AnalyticsUtils.gaEvent(otp.util.AnalyticsUtils.TRIP_PRINT);
+        otp.util.Analytics.gaEvent(otp.util.Analytics.OTP_TRIP_PRINT);
     },
 
     /** */
@@ -262,7 +262,7 @@ otp.planner.TripTab = {
         this.planner.clearForms();
         this.planner.populateFormTab(this.request);
 
-        otp.util.AnalyticsUtils.gaEvent(otp.util.AnalyticsUtils.TRIP_EDIT);
+        otp.util.Analytics.gaEvent(otp.util.Analytics.OTP_TRIP_EDIT);
     },
 
     /** */
@@ -295,7 +295,7 @@ otp.planner.TripTab = {
 
         this.planner.populateFormTab(rev);
 
-        otp.util.AnalyticsUtils.gaEvent(otp.util.AnalyticsUtils.TRIP_REVERSE);
+        otp.util.Analytics.gaEvent(otp.util.Analytics.OTP_TRIP_REVERSE);
     },
 
     /** */
