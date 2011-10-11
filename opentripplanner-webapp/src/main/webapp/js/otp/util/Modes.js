@@ -64,6 +64,9 @@ otp.util.Modes =  {
         } catch(e) {
         }
 
+        if(retVal == null)
+            retVal = mode;
+
         return retVal;
     },
 

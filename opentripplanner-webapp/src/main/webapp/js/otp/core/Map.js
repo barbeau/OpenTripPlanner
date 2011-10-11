@@ -51,7 +51,7 @@ otp.core.MapStatic = {
      * 
      */
     defaultExtent : null,
-    
+
     /** use attribution if you want the same attribute on both tile sets */
     attribution       : null,
 
