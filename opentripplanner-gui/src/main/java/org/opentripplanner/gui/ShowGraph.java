@@ -31,19 +31,15 @@ import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 
 import org.opentripplanner.common.IterableLibrary;
-import org.opentripplanner.routing.core.DirectEdge;
-import org.opentripplanner.routing.core.Edge;
 import org.opentripplanner.routing.core.EdgeNarrative;
-import org.opentripplanner.routing.core.GenericVertex;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
 import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.TransitStop;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.Vertex;
 import org.opentripplanner.routing.location.StreetLocation;
 import org.opentripplanner.routing.spt.GraphPath;
+import org.opentripplanner.routing.vertextype.TransitStop;
+import org.opentripplanner.routing.vertextype.TurnVertex;
 import org.opentripplanner.routing.edgetype.DelegatingEdgeNarrative;
+import org.opentripplanner.routing.graph.Edge;
 import org.opentripplanner.routing.edgetype.PatternAlight;
 import org.opentripplanner.routing.edgetype.PatternBoard;
 import org.opentripplanner.routing.edgetype.StreetTransitLink;
@@ -51,6 +47,9 @@ import org.opentripplanner.routing.edgetype.StreetTraversalPermission;
 import org.opentripplanner.routing.edgetype.StreetEdge;
 import org.opentripplanner.routing.edgetype.PatternEdge;
 import org.opentripplanner.routing.edgetype.TurnEdge;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Envelope;
@@ -85,15 +84,15 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
     VertexSelectionListener selector;
     private ArrayList<VertexSelectionListener> selectors;
 	private List<Vertex> visibleVertices; 
-    private List<DirectEdge> visibleStreetEdges = new ArrayList<DirectEdge>(1000); 
-    private List<DirectEdge> visibleTransitEdges = new ArrayList<DirectEdge>(1000); 
+    private List<Edge> visibleStreetEdges = new ArrayList<Edge>(1000); 
+    private List<Edge> visibleTransitEdges = new ArrayList<Edge>(1000); 
     private List<Vertex> highlightedVertices = new ArrayList<Vertex>(1000);
-    private List<DirectEdge> highlightedEdges = new ArrayList<DirectEdge>(1000);
+    private List<Edge> highlightedEdges = new ArrayList<Edge>(1000);
     // these queues are filled by a search in another thread, so must be threadsafe
     private Queue<Vertex> newHighlightedVertices = new LinkedBlockingQueue<Vertex>();
-    private Queue<DirectEdge> newHighlightedEdges = new LinkedBlockingQueue<DirectEdge>();
+    private Queue<Edge> newHighlightedEdges = new LinkedBlockingQueue<Edge>();
     private Vertex highlightedVertex;
-    private DirectEdge highlightedEdge;
+    private Edge highlightedEdge;
     private GraphPath highlightedGraphPath;
     protected double mouseModelX;
     protected double mouseModelY;
@@ -109,7 +108,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
     private static double lastLabelY;
     private static final DecimalFormat latFormatter = new DecimalFormat("00.0000°N ; 00.0000°S");
     private static final DecimalFormat lonFormatter = new DecimalFormat("000.0000°E ; 000.0000°W");
-    private static final SimpleDateFormat shortDateFormat = new SimpleDateFormat("HH:mm:ss z");
+    private final SimpleDateFormat shortDateFormat = new SimpleDateFormat("HH:mm:ss z");
 
     /* Layer constants */
     static final int DRAW_MINIMAL  = 0; // XY coordinates    
@@ -226,6 +225,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         e.expandToInclude(c);
         e.expandBy(0.002);
         modelBounds = e;
+        matchAspect();
         drawLevel = DRAW_ALL;
     }
 
@@ -236,6 +236,15 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         modelBounds = e;
         drawLevel = DRAW_ALL;
     }
+
+    /** Zoom to an envelope. Used for annotation zoom.
+     * @author mattwigway
+     */
+    public void zoomToEnvelope(Envelope e) {
+        modelBounds = e;
+        matchAspect();
+        drawLevel = DRAW_ALL;
+    }     
 
     void matchAspect() {
         /* Basic sinusoidal projection of lat/lon data to square pixels */
@@ -255,16 +264,11 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         edgeIndex = new STRtree();
         Envelope env;
         // int xminx, xmax, ymin, ymax;
-        for (GraphVertex gv : graph.getVertices()) {
-        	Vertex v = gv.vertex;
-            if ((v instanceof TransitStop) ||
-            	(v instanceof StreetLocation) || 
-            	(v instanceof GenericVertex)) {
-            		Coordinate c = gv.vertex.getCoordinate();
-            		env = new Envelope(c);
-            		vertexIndex.insert(env, v);
-            }
-            for (DirectEdge e : IterableLibrary.filter(gv.getOutgoing(),DirectEdge.class)) {
+        for (Vertex v : graph.getVertices()) {
+            Coordinate c = v.getCoordinate();
+            env = new Envelope(c);
+            vertexIndex.insert(env, v);
+            for (Edge e : v.getOutgoing()) {
                 if (e.getGeometry() == null) continue;
                 if (e instanceof PatternEdge ||
                 	e instanceof StreetTransitLink ||
@@ -283,7 +287,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
     	visibleVertices = (List<Vertex>) vertexIndex.query(modelBounds);
         visibleStreetEdges.clear();
         visibleTransitEdges.clear();
-        for (DirectEdge de : (Iterable<DirectEdge>) edgeIndex.query(modelBounds)) {
+        for (Edge de : (Iterable<Edge>) edgeIndex.query(modelBounds)) {
         	if (de instanceof PatternEdge ||
         		de instanceof StreetTransitLink) {
         		visibleTransitEdges.add(de);
@@ -295,7 +299,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         }
     }
     
-    private int drawEdge(DirectEdge e) {
+    private int drawEdge(Edge e) {
     	if (e.getGeometry() == null) return 0; // do not attempt to draw geometry-less edges
     	Coordinate[] coords = e.getGeometry().getCoordinates();
 	    beginShape();
@@ -306,7 +310,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
     }
 
     /* use endpoints instead of geometry for quick updating */
-    private void drawEdgeFast(DirectEdge e) { 
+    private void drawEdgeFast(Edge e) { 
 	    Coordinate[] coords = e.getGeometry().getCoordinates();	    
 	    Coordinate c0 = coords[0];
 	    Coordinate c1 = coords[coords.length - 1]; 
@@ -322,11 +326,11 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
 
         	TraverseMode mode = en.getMode();
             if(en instanceof DelegatingEdgeNarrative) {
-                en = (DirectEdge) ((DelegatingEdgeNarrative)en).getBase();
+                en = ((DelegatingEdgeNarrative)en).getBase();
             }
 
-        	if (!(en instanceof DirectEdge)) continue;
-        	DirectEdge e = (DirectEdge) en;
+        	if (!(en instanceof Edge)) continue;
+        	Edge e = (Edge) en;
         	if (mode.isTransit()) {
             	stroke(200, 050, 000); 
             	strokeWeight(6);   
@@ -397,8 +401,18 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
     }
 
     private void drawVertex(Vertex v, double r) {
-    	noStroke();
+        noStroke();
         ellipse(toScreenX(v.getX()), toScreenY(v.getY()), r, r);
+        if (v instanceof TurnVertex) {
+            Coordinate[] coords = ((TurnVertex) v).getGeometry().getCoordinates();
+            Coordinate c0 = coords[0];
+            Coordinate c1 = coords[coords.length - 1];
+            stroke(255, 255, 50, 127);
+            strokeWeight(3);
+            line((float) toScreenX(c0.x), (float) toScreenY(c0.y), 
+                 (float) toScreenX(c1.x), (float) toScreenY(c1.y));
+            noStroke();
+        }
     }
 
     public synchronized void draw() {
@@ -443,7 +457,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         	    stroke(30, 128, 30); // dark green
                 strokeWeight(1);   
             	noFill();
-                //for (DirectEdge e : visibleStreetEdges) drawEdge(e);
+                //for (Edge e : visibleStreetEdges) drawEdge(e);
                 while (drawOffset < visibleStreetEdges.size()) {
                 	drawEdge(visibleStreetEdges.get(drawOffset));
                 	drawOffset += 1;
@@ -458,9 +472,9 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
 				stroke(40, 40, 128, 30); // transparent blue
 				strokeWeight(4);
             	noFill();
-    			//for (DirectEdge e : visibleTransitEdges) {
+    			//for (Edge e : visibleTransitEdges) {
     			while (drawOffset < visibleTransitEdges.size()) {
-    				DirectEdge e = visibleTransitEdges.get(drawOffset);
+    				Edge e = visibleTransitEdges.get(drawOffset);
     				drawEdge(e);
     				drawOffset += 1;
                 	if (drawOffset % BLOCK_SIZE == 0) {
@@ -484,7 +498,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         	stroke(200, 200, 000, 16); // yellow transparent edge highlight
             strokeWeight(8);   
 	  	    if (highlightedEdges != null) {
-		  	    for (DirectEdge e : highlightedEdges) {
+		  	    for (Edge e : highlightedEdges) {
 	                drawEdge(e);
 	            }
 	  	    }
@@ -540,7 +554,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         stroke(256, 0, 0, 128); //, 8); 
         strokeWeight(6);   
         while (! newHighlightedEdges.isEmpty()) {
-            DirectEdge de = newHighlightedEdges.poll();
+            Edge de = newHighlightedEdges.poll();
             if (de != null) {
                 drawEdge(de);
                 highlightedEdges.add(de);
@@ -680,7 +694,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         drawLevel = DRAW_ALL;
     }
 
-    public void enqueueHighlightedEdge (DirectEdge de) {
+    public void enqueueHighlightedEdge (Edge de) {
         newHighlightedEdges.add(de);
     }
     
@@ -690,7 +704,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         drawLevel = DRAW_ALL;
     }
     
-    public void highlightEdge(DirectEdge selected) {
+    public void highlightEdge(Edge selected) {
         highlightedEdge = selected;
         drawLevel = DRAW_ALL;
     }
@@ -711,7 +725,7 @@ public class ShowGraph extends PApplet implements MouseWheelListener {
         drawLevel = DRAW_ALL;
     }
 
-    public void setHighlightedEdges(List<DirectEdge> edges) {
+    public void setHighlightedEdges(List<Edge> edges) {
         highlightedEdges = edges;
         drawLevel = DRAW_ALL;
     }

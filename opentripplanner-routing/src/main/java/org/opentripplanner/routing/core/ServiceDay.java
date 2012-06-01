@@ -13,8 +13,11 @@
 
 package org.opentripplanner.routing.core;
 
+import java.io.Serializable;
 import java.util.Date;
+import java.util.GregorianCalendar;
 import java.util.Set;
+import java.util.TimeZone;
 
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.calendar.ServiceDate;
@@ -27,7 +30,9 @@ import org.onebusaway.gtfs.services.calendar.CalendarService;
  * @author andrewbyrd
  *
  */
-public class ServiceDay {
+public class ServiceDay implements Serializable {
+    private static final long serialVersionUID = -1206371243806996680L;
+
     protected long midnight;
     protected Set<AgencyAndId> serviceIdsRunning;
     
@@ -35,9 +40,13 @@ public class ServiceDay {
      * make a ServiceDay including the given time's day's starting second and a set of 
      * serviceIds running on that day.
      */
-    public ServiceDay(long time, CalendarService cs) {
-        ServiceDate sd = new ServiceDate(new Date(time * 1000));
-        Date d = sd.getAsDate();        
+    public ServiceDay(long time, CalendarService cs, String agencyId) {
+        TimeZone timeZone = cs.getTimeZoneForAgencyId(agencyId);
+        GregorianCalendar calendar = new GregorianCalendar(timeZone);
+        calendar.setTime(new Date(time * 1000));
+
+        ServiceDate sd = new ServiceDate(calendar);
+        Date d = sd.getAsDate(timeZone);
         this.midnight = d.getTime() / 1000;
         this.serviceIdsRunning = cs.getServiceIdsOnDate(sd);
     }

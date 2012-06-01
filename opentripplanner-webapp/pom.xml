@@ -3,17 +3,13 @@
     <modelVersion>4.0.0</modelVersion>
     <artifactId>opentripplanner-webapp</artifactId>
     <packaging>war</packaging>
-    <name>opentripplanner-webapp</name>
+    <name>OpenTripPlanner Main Client</name>
 
     <parent>
         <artifactId>opentripplanner</artifactId>
         <groupId>org.opentripplanner</groupId>
-        <version>0.4.3-SNAPSHOT</version>
+        <version>0.8.0-SNAPSHOT</version>
     </parent>
-
-    <dependencies>
-
-    </dependencies>
 
     <build>
         <finalName>opentripplanner-webapp</finalName>
@@ -21,7 +17,7 @@
             <plugin>
                 <groupId>ro.isdc.wro4j</groupId>
                 <artifactId>wro4j-maven-plugin</artifactId>
-                <version>1.3.6</version>
+                <version>1.4.3</version>
                 <executions>
                     <execution>
                             <phase>prepare-package</phase>

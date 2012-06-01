@@ -13,9 +13,13 @@
 
 package org.opentripplanner.graph_builder.impl;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+
 import org.opentripplanner.graph_builder.services.GraphBuilder;
-import org.opentripplanner.routing.core.Graph;
 import org.opentripplanner.routing.edgetype.loader.NetworkLinker;
+import org.opentripplanner.routing.graph.Graph;
 
 /**
  * {@link GraphBuilder} plugin that links up the stops of a transit network to a street network.
@@ -23,10 +27,22 @@ import org.opentripplanner.routing.edgetype.loader.NetworkLinker;
  */
 public class TransitToStreetNetworkGraphBuilderImpl implements GraphBuilder {
 
+    public List<String> provides() {
+        return Arrays.asList("linking");
+    }
+
+    public List<String> getPrerequisites() {
+        return Arrays.asList("streets");
+    }
+
     @Override
-    public void buildGraph(Graph graph) {
-        NetworkLinker linker = new NetworkLinker(graph);
+    public void buildGraph(Graph graph, HashMap<Class<?>, Object> extra) {
+        NetworkLinker linker = new NetworkLinker(graph, extra);
         linker.createLinkage();
     }
 
+    @Override
+    public void checkInputs() {
+        //no inputs
+    }
 }

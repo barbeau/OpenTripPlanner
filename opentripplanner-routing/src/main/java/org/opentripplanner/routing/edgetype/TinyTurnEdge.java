@@ -13,12 +13,14 @@
 
 package org.opentripplanner.routing.edgetype;
 
+import java.util.Set;
+
 import org.opentripplanner.routing.core.EdgeNarrative;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Vertex;
 
 /**
  * A turn edge which includes no non-turn street -- it takes you from one vertex at an intersection
@@ -29,7 +31,7 @@ public class TinyTurnEdge extends FreeEdge {
 
     private static final long serialVersionUID = 3925814840369402222L;
 
-    private boolean restricted = false;
+    private Set<TraverseMode> restrictedModes;
 
     private int turnCost = 0;
     
@@ -40,16 +42,16 @@ public class TinyTurnEdge extends FreeEdge {
         this.permission = permission;
     }
     
-    public boolean canTraverse(TraverseOptions options) {
-        if (options.getModes().getWalk() && permission.allows(StreetTraversalPermission.PEDESTRIAN)) {
+    public boolean canTraverse(RoutingRequest options, TraverseMode mode) {
+        if (mode == TraverseMode.WALK && permission.allows(StreetTraversalPermission.PEDESTRIAN)) {
             return true;
         }
 
-        if (options.getModes().getBicycle() && permission.allows(StreetTraversalPermission.BICYCLE)) {
+        if (mode == TraverseMode.BICYCLE && permission.allows(StreetTraversalPermission.BICYCLE)) {
             return true;
         }
 
-        if (options.getModes().getCar() && permission.allows(StreetTraversalPermission.CAR)) {
+        if (mode == TraverseMode.CAR && permission.allows(StreetTraversalPermission.CAR)) {
             return true;
         }
 
@@ -58,10 +60,11 @@ public class TinyTurnEdge extends FreeEdge {
 
     @Override
     public State traverse(State s0) {
-        TraverseOptions options = s0.getOptions();
+        RoutingRequest options = s0.getOptions();
+        TraverseMode traverseMode = s0.getNonTransitMode(options);
 
-        if (!canTraverse(options)) {
-            if (options.getModes().contains(TraverseMode.BICYCLE)) {
+        if (!canTraverse(options, traverseMode)) {
+            if (traverseMode == TraverseMode.BICYCLE) {
             	// try walking bike since you can't ride here
                 return doTraverse(s0, options.getWalkingOptions());
             }
@@ -70,37 +73,44 @@ public class TinyTurnEdge extends FreeEdge {
         return doTraverse(s0, options);
     }
     
-    public State doTraverse(State s0, TraverseOptions options) {
-        if (restricted && !options.getModes().contains(TraverseMode.WALK)) {
+    private boolean turnRestricted(State s0, RoutingRequest options) {
+        if (restrictedModes == null)
+            return false;
+        else {
+            return restrictedModes.contains(s0.getNonTransitMode(options));
+        }
+    }
+
+    public State doTraverse(State s0, RoutingRequest options) {
+        if (turnRestricted(s0, options) && !options.getModes().getWalk()) {
             return null;
         }
+        TraverseMode traverseMode = s0.getNonTransitMode(options);
+        double speed = options.getSpeed(traverseMode);
         double angleLength = turnCost / 20.0;
-        double time = angleLength / options.speed;
+        double time = angleLength / speed;
         double weight = time * options.walkReluctance + turnCost / 20;
-        EdgeNarrative en = new FixedModeEdge(this, s0.getOptions().getModes().getNonTransitMode());
+        EdgeNarrative en = new FixedModeEdge(this, traverseMode);
         StateEditor s1 = s0.edit(this, en);
         s1.incrementWeight(weight);
         s1.incrementTimeInSeconds((int) Math.ceil(time));
         return s1.makeState();
     }
 
-    public boolean equals(Object o) {
-        if (o instanceof TinyTurnEdge) {
-            TinyTurnEdge other = (TinyTurnEdge) o;
-            return other.getFromVertex().equals(fromv) && other.getToVertex().equals(tov);
-        }
-        return false;
-    }
-
     public String toString() {
         return "TinyTurnEdge(" + fromv + " -> " + tov + ")";
-    }
-
-    public void setRestricted(boolean restricted) {
-        this.restricted = restricted;
     }
 
     public void setTurnCost(int turnCost) {
         this.turnCost = turnCost;
     }
+
+    public void setRestrictedModes(Set<TraverseMode> modes) {
+        this.restrictedModes = modes;
+    }
+
+    public Set<TraverseMode> getRestrictedModes() {
+        return restrictedModes;
+    }
+
 }

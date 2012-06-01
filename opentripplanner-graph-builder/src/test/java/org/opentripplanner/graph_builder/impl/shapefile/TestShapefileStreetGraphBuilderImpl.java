@@ -13,8 +13,6 @@
 
 package org.opentripplanner.graph_builder.impl.shapefile;
 
-import static org.opentripplanner.common.IterableLibrary.filter;
-
 import java.io.File;
 import java.net.URL;
 import java.util.HashMap;
@@ -22,15 +20,14 @@ import java.util.HashMap;
 import junit.framework.TestCase;
 
 import org.junit.Test;
-import org.opentripplanner.routing.algorithm.AStar;
-import org.opentripplanner.routing.core.DirectEdge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
+import org.opentripplanner.routing.algorithm.GenericAStar;
 import org.opentripplanner.routing.core.TraverseMode;
 import org.opentripplanner.routing.core.TraverseModeSet;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Edge;
 import org.opentripplanner.routing.edgetype.StreetTraversalPermission;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.spt.ShortestPathTree;
 
 import com.vividsolutions.jts.geom.Coordinate;
@@ -105,26 +102,25 @@ public class TestShapefileStreetGraphBuilderImpl extends TestCase {
         loader.setFeatureSourceFactory(factory);
         loader.setSchema(schema);
 
-        loader.buildGraph(gg);
+        loader.buildGraph(gg, new HashMap<Class<?>, Object>());
 
         //find start and end vertices
-        GraphVertex start = null;
-        GraphVertex end = null;
-        GraphVertex carlton = null;
+        Vertex start = null;
+        Vertex end = null;
+        Vertex carlton = null;
         
         Coordinate vanderbiltAtPark = new Coordinate(-73.969178, 40.676785);
         Coordinate grandAtLafayette = new Coordinate(-73.999095, 40.720005);
         Coordinate carltonAtPark = new Coordinate(-73.972347, 40.677447);
 
-        for (GraphVertex gv : gg.getVertices()) {
-            Vertex v = gv.vertex;
+        for (Vertex v : gg.getVertices()) {
             if (v.getCoordinate().distance(vanderbiltAtPark) < 0.00005) {
                 /* we need the correct vanderbilt at park.  In this case,
                  * that's the one facing west on vanderbilt.
                  */
                 int numParks = 0;
                 int numCarltons = 0;
-                for (DirectEdge e: filter(gv.getOutgoing(),DirectEdge.class)) {
+                for (Edge e: v.getOutgoing()) {
                     if (e.getToVertex().getName().contains("PARK")) {
                         numParks ++;
                     }
@@ -135,9 +131,9 @@ public class TestShapefileStreetGraphBuilderImpl extends TestCase {
                 if (numCarltons != 2 || numParks != 1) {
                     continue;
                 }
-                start = gv;
+                start = v;
             } else if (v.getCoordinate().distance(grandAtLafayette) < 0.0001) {
-                end = gv;
+                end = v;
             } else if (v.getCoordinate().distance(carltonAtPark) < 0.00005) {
                 /* we need the correct carlton at park.  In this case,
                  * that's the one facing west.
@@ -145,7 +141,7 @@ public class TestShapefileStreetGraphBuilderImpl extends TestCase {
                 int numFlatbushes = 0;
                 int numParks = 0;
 
-                for (DirectEdge e: filter(gv.getOutgoing(),DirectEdge.class)) {
+                for (Edge e: v.getOutgoing()) {
                     if (e.getToVertex().getName().contains("FLATBUSH")) {
                         numFlatbushes ++;
                     }
@@ -156,7 +152,7 @@ public class TestShapefileStreetGraphBuilderImpl extends TestCase {
                 if (numFlatbushes != 2 || numParks != 1) {
                     continue;
                 }
-                carlton = gv;
+                carlton = v;
             }
         }
         assertNotNull(start);
@@ -166,20 +162,23 @@ public class TestShapefileStreetGraphBuilderImpl extends TestCase {
         assertEquals(3, start.getDegreeOut());
         assertEquals(3, start.getDegreeIn());
 
-        TraverseOptions wo = new TraverseOptions();
-        ShortestPathTree spt = AStar.getShortestPathTree(gg, start.vertex, end.vertex, 0, wo);
+        GenericAStar aStar = new GenericAStar();
+        RoutingRequest opt = new RoutingRequest();
+        opt.setRoutingContext(gg, start, end);
+        ShortestPathTree spt = aStar.getShortestPathTree(opt);
         assertNotNull(spt);
 
         //test that the option to walk bikes on the first or last segment works
         
-        wo = new TraverseOptions(new TraverseModeSet(TraverseMode.BICYCLE));
+        opt = new RoutingRequest(new TraverseModeSet(TraverseMode.BICYCLE));
         
         //Real live cyclists tell me that they would prefer to ride around the long way than to 
         //walk their bikes the short way.  If we slow down the default biking speed, that will 
         //force a change in preferences.
-        wo.speed = 2; 
+        opt.setBikeSpeed(2);
         
-        spt = AStar.getShortestPathTree(gg, start.vertex, carlton.vertex, 0, wo);
+        opt.setRoutingContext(gg, start, carlton);
+        spt = aStar.getShortestPathTree(opt);
         assertNotNull(spt);
         /* commented out as bike walking is not supported */
         /*

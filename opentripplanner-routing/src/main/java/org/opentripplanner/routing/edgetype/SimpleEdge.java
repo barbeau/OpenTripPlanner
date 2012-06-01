@@ -15,7 +15,7 @@ package org.opentripplanner.routing.edgetype;
 
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.graph.Vertex;
 
 public class SimpleEdge extends FreeEdge {
     private static final long serialVersionUID = 1L;
@@ -36,15 +36,4 @@ public class SimpleEdge extends FreeEdge {
         return s1.makeState();
     }
 
-    public boolean equals(Object other) {
-        if (other instanceof SimpleEdge) {
-            SimpleEdge simple = (SimpleEdge) other;
-            return super.equals(simple) && simple.weight == weight && simple.seconds == seconds;
-        }
-        return false;
-    }
-    
-    public int hashCode() {
-        return fromv.hashCode() ^ tov.hashCode() + seconds + new Double(weight).hashCode();
-    }
 }

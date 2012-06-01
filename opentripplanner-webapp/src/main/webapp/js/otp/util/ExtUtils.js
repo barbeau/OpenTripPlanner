@@ -153,7 +153,7 @@ catch(e)
  */
 otp.util.ExtUtils = {
 
-    MAP_ATTRIBUTION    : '<a href="#" onclick="otp.util.ExtUtils.toggleAboutMap();">Powered by OpenGeo</a>',
+    MAP_ATTRIBUTION    : '<a href="javascript:void;" onclick="otp.util.ExtUtils.toggleAboutMap();">Powered by OpenGeo</a>',
     ABOUT_MAP_WINDOW   : null,
 
 
@@ -176,7 +176,7 @@ otp.util.ExtUtils = {
             root            : root,
             fields          : fields
         };
-        trimet.extend(c, config);
+        otp.extend(c, config);
 
         var retVal = new Ext.data.JsonStore(c);
         retVal.proxy.on("exception",
@@ -310,16 +310,20 @@ otp.util.ExtUtils = {
     /**
      * within an exception block because if the form is hidden, Ext throws an error
      */
-    formSetRawValue : function(form, value, defValue)
+    formSetRawValue : function(form, value, defValue, dirty)
     {
-        if(form && form.setRawValue)
+        try
         {
             var v = defValue;
             if(value)
                 v = value;
             if(v)
                 form.setRawValue(v);
+            if(dirty && form.setDirty)
+                form.setDirty();
         }
+        catch(e)
+        {}
     },
 
     /** 
@@ -551,7 +555,8 @@ otp.util.ExtUtils = {
      */
     makeTreeNode : function(treeNodeConfig, clickCallback, scope, overCallback, outCallback)
     {
-        var configDefaults = {margins: '0 0 0 0', cmargins: '0 2 0 0', expanded: true, collapsible: true};
+        // NOTE: href:# fixes the bug where clicking / dbl-clicking on tree nodes reloads the app url (trip details node)
+        var configDefaults = {href:"javascript:void;", margins: '0 0 0 0', cmargins: '0 2 0 0', expanded: true, collapsible: true};
         var config = Ext.apply({}, treeNodeConfig, configDefaults);
         var treeNode = new Ext.tree.TreeNode(config);
         this.setClickCallback(treeNode,     clickCallback, scope);
@@ -679,7 +684,7 @@ otp.util.ExtUtils = {
         var rec = store.getAt(index);
         return otp.util.ExtUtils.getCoordinate(rec, defVal, isLatLon);
     },
-    
+
     /** */
     getCoordinate: function(record, defVal)
     {
@@ -696,6 +701,35 @@ otp.util.ExtUtils = {
         {
             retVal = defVal;
         }
+
+        return retVal;
+    },
+
+    /** */
+    getName : function(record, defVal)
+    {
+        var name = null;
+        try
+        {
+            name = record.get('name');
+        }
+        catch(err)
+        {
+            name = defVal;
+        }
+
+        return name;
+    },
+
+    /** */
+    getNamedCoordinate : function(record, defVal)
+    {
+        var coord = this.getCoordinate(record, defVal);
+        var name  = this.getName(record);
+
+        var retVal = coord;
+        if(name)
+            retVal = name + "::" + coord;
 
         return retVal;
     },

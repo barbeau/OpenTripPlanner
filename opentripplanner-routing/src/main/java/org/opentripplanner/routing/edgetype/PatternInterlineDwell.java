@@ -20,12 +20,12 @@ import java.util.Map;
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.Trip;
 import org.opentripplanner.gtfs.GtfsLibrary;
-import org.opentripplanner.routing.core.AbstractEdge;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.AbstractEdge;
+import org.opentripplanner.routing.graph.Vertex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -108,17 +108,17 @@ public class PatternInterlineDwell extends AbstractEdge implements OnBoardForwar
     }
     
     @Override
-    public double weightLowerBound(TraverseOptions options) {
+    public double weightLowerBound(RoutingRequest options) {
         return timeLowerBound(options);
     }
     
     @Override
-    public double timeLowerBound(TraverseOptions options) {
+    public double timeLowerBound(RoutingRequest options) {
         return bestDwellTime;
     }
 
     public State traverse(State state0) {
-        TraverseOptions options = state0.getOptions();
+        RoutingRequest options = state0.getOptions();
 
         AgencyAndId tripId = state0.getTripId();
         InterlineDwellData dwellData;

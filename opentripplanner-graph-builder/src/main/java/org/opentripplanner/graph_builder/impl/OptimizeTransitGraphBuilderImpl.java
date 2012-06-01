@@ -13,31 +13,49 @@
 
 package org.opentripplanner.graph_builder.impl;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+
 import org.opentripplanner.graph_builder.services.GraphBuilder;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
 import org.opentripplanner.routing.edgetype.BasicTripPattern;
 import org.opentripplanner.routing.edgetype.PatternEdge;
-import org.opentripplanner.routing.edgetype.TripPattern;
+import org.opentripplanner.routing.edgetype.TableTripPattern;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 
 /**
  * Replace BasicTripPatterns with ArrayTripPatterns.
  */
 public class OptimizeTransitGraphBuilderImpl implements GraphBuilder {
-
+    
+    public List<String> provides() {
+        return Collections.emptyList();
+    }
+    
+    public List<String> getPrerequisites() {
+        return Arrays.asList("transit");
+    }
+    
     @Override
-    public void buildGraph(Graph graph) {
-        for (GraphVertex gv : graph.getVertices()) {
-            for (Edge e: gv.getOutgoing()) {
+    public void buildGraph(Graph graph, HashMap<Class<?>, Object> extra) {
+        for (Vertex v : graph.getVertices()) {
+            for (Edge e: v.getOutgoing()) {
                 if (e instanceof PatternEdge) {
                     PatternEdge pe = (PatternEdge) e;
-                    TripPattern pattern = pe.getPattern();
+                    TableTripPattern pattern = pe.getPattern();
                     if (pattern instanceof BasicTripPattern) {
                         pe.setPattern(((BasicTripPattern) pattern).convertToArrayTripPattern());
                     }
                 }
             }
         }
+    }
+
+    @Override
+    public void checkInputs() {
+        //no inputs
     }
 }

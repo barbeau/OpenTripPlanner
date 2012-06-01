@@ -25,7 +25,7 @@ otp.locale.Marathi = {
         rightClickMsg : "प्रवास कुठून कुठपर्यंत करायचा आहे ते स्थान निवडण्याकरिता नकाशावर राईट क्लिक करा.",
         attribution   : {
             title   : "License Attribution",
-            content : "Disclaimer goes here"
+            content : "Disclaimer goes here"  
         }
     },
 
@@ -33,12 +33,26 @@ otp.locale.Marathi = {
     {
         fromHere         : "कुठे बस पकडणार?",
         toHere           : "कुठे ऊतरणार?",
+        intermediateHere : "Add intermediate point", // TODO localize
 
         centerHere       : "नकाशा बघण्यासाठी",
         zoomInHere       : "जुम इन करण्यासाठी(चित्र मोठे करण्यासाठी)",
         zoomOutHere      : "जुम आउट करण्यासाठी(चित्र लहान करण्यासाठी)",
         previous         : "आधी या ठिकाणी होतात",
         next             : "नंतरची जागा"
+    },
+
+    // TODO Localize Me
+    bikeTriangle : 
+    {
+        safeName : "Bike friendly",
+        safeSym  : "S",
+
+        hillName : "Flat",
+        hillSym  : "F",
+
+        timeName : "Quick",
+        timeSym  : "Q"
     },
 
     service : 
@@ -60,6 +74,7 @@ otp.locale.Marathi = {
 
     buttons: 
     {
+// TODO
         reverse       : "Reverse",
         reverseTip    : "<b>Reverse directions</b><br/>Plan a return trip by reversing this trip's start and end points, and adjusting the time forward.",
         reverseMiniTip: "Reverse directions",
@@ -87,7 +102,9 @@ otp.locale.Marathi = {
         ok           : "OK",
         cancel       : "Cancel",
         yes          : "Yes",
-        no           : "No"
+        no           : "No",
+        showDetails  : "Show details...",
+        hideDetails  : "Hide details..."
     },
 
     // note: keep these lower case (and uppercase via template / code if needed)
@@ -154,6 +171,8 @@ otp.locale.Marathi = {
     labels : 
     {
 // TODO
+        agency_msg   : "Service run by", // TODO
+        agency_msg_tt: "Open agency website in separate window...", // TODO
         about        : "About",
         stop_id      : "Stop ID",
         trip_details : "Le Trip Details",
@@ -202,6 +221,8 @@ otp.locale.Marathi = {
     {
 // TODO
         format        : "D, j M H:i",
+        date_format   : "d-m-Y",
+        time_format   : "H:i",
         minute        : "मिनिट",
         minutes       : "मिनिटस",
         minute_abbrev : "मिनिट",
@@ -236,8 +257,10 @@ otp.locale.Marathi = {
             fromHere      : "या इथून",
             to            : "कुठ पर्यंत ",
             toHere        : "या इथपर्यंत ",
+            intermediate  : "Intermediate Place",          // TODO
             minimize      : "दाखवा",
             maxWalkDistance: "पायी चालण्याचे अंतर ",
+            maxBikeDistance: "पायी चालण्याचे  bike",              // TODO
             arriveDepart  : "पोहोचण्याचे ठिकाण/निघा",
             mode          : "या मार्गाने जाऊ शकता",
             wheelchair    : "व्हील चेअरचा वापर करता येईल अशी ट्रीप", 
@@ -302,7 +325,8 @@ otp.locale.Marathi = {
         [
           ['TRANSFERS', 'कमीत कमी बस बदलुन'],
           ['QUICK',     'कमी वेळेत'],
-          ['SAFE',      'सुरक्षित मार्ग']
+          ['SAFE',      'सुरक्षित मार्ग'],
+          ['TRIANGLE',  'Custom trip...']  // TODO localize
         ],
     
         arriveDepart: 

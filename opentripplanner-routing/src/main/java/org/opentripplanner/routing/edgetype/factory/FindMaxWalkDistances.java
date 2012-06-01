@@ -15,19 +15,18 @@ package org.opentripplanner.routing.edgetype.factory;
 
 import java.util.HashSet;
 
+import org.opentripplanner.common.pqueue.BinHeap;
 import org.opentripplanner.routing.algorithm.NegativeWeightException;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
 import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.TransitStop;
 import org.opentripplanner.routing.core.TraverseMode;
 import org.opentripplanner.routing.core.TraverseModeSet;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.edgetype.StreetVertex;
-import org.opentripplanner.routing.pqueue.BinHeap;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.spt.BasicShortestPathTree;
+import org.opentripplanner.routing.vertextype.TurnVertex;
+import org.opentripplanner.routing.vertextype.TransitStop;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,18 +36,18 @@ public class FindMaxWalkDistances {
 
     public static void find(Graph graph) {
         _log.debug("finding max walk distances");
-        for (GraphVertex gv : graph.getVertices()) {
-            gv.vertex.setDistanceToNearestTransitStop(Double.MAX_VALUE);
+        for (Vertex gv : graph.getVertices()) {
+            gv.setDistanceToNearestTransitStop(Double.MAX_VALUE);
         }
-        for (GraphVertex gv : graph.getVertices()) {
-            if (gv.vertex instanceof TransitStop) { 
-                assignStopDistances(graph, (TransitStop) gv.vertex);
+        for (Vertex gv : graph.getVertices()) {
+            if (gv instanceof TransitStop) { 
+                assignStopDistances(graph, (TransitStop) gv);
             }
         }
-        for (GraphVertex gv : graph.getVertices()) {
-            if (gv.vertex.getDistanceToNearestTransitStop() == Double.MAX_VALUE) {
+        for (Vertex gv : graph.getVertices()) {
+            if (gv.getDistanceToNearestTransitStop() == Double.MAX_VALUE) {
                 /* transit vertices don't get explored by assignStopDistances */
-                gv.vertex.setDistanceToNearestTransitStop(0);
+                gv.setDistanceToNearestTransitStop(0);
             }
         }
     }
@@ -58,16 +57,16 @@ public class FindMaxWalkDistances {
      */
     private static void assignStopDistances(Graph graph, TransitStop origin) {
         
-        TraverseOptions options = new TraverseOptions(new TraverseModeSet(TraverseMode.WALK));
+        RoutingRequest options = new RoutingRequest(new TraverseModeSet(TraverseMode.WALK));
         options.setMaxWalkDistance(Double.MAX_VALUE);
         options.walkReluctance = 1.0;
-        options.speed = 1.0;
+        options.setWalkSpeed(1.0);
         
         // Iteration Variables
         State u, v;
         HashSet<Vertex> closed = new HashSet<Vertex>();
         BinHeap<State> queue = new BinHeap<State>(50);
-        BasicShortestPathTree spt = new BasicShortestPathTree();
+        BasicShortestPathTree spt = new BasicShortestPathTree(options);
         State init = new State(origin, options);
         spt.add(init);
         queue.insert(init, init.getWeight());
@@ -80,7 +79,7 @@ public class FindMaxWalkDistances {
 
             closed.add(fromv);
 
-            Iterable<Edge> outgoing = graph.getOutgoing(fromv);
+            Iterable<Edge> outgoing = fromv.getOutgoing();
 
             for (Edge edge : outgoing) {
 
@@ -104,8 +103,8 @@ public class FindMaxWalkDistances {
 
                 double new_w = v.getWeight();
 
-                if (toVertex instanceof StreetVertex) {
-                    StreetVertex sv = (StreetVertex) toVertex;
+                if (toVertex instanceof TurnVertex) {
+                    TurnVertex sv = (TurnVertex) toVertex;
                     if (sv.getDistanceToNearestTransitStop() <= new_w) {
                         continue;
                     }

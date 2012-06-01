@@ -15,27 +15,35 @@ package org.opentripplanner.routing.patches;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 
 import junit.framework.TestCase;
 
+import org.onebusaway.gtfs.model.Agency;
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.Route;
+import org.onebusaway.gtfs.model.ServiceCalendar;
+import org.onebusaway.gtfs.model.ServiceCalendarDate;
 import org.onebusaway.gtfs.model.Stop;
+import org.onebusaway.gtfs.model.calendar.CalendarServiceData;
 import org.opentripplanner.ConstantsForTests;
 import org.opentripplanner.gtfs.GtfsContext;
 import org.opentripplanner.gtfs.GtfsLibrary;
-import org.opentripplanner.routing.algorithm.AStar;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
+import org.opentripplanner.routing.algorithm.GenericAStar;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
 import org.opentripplanner.routing.edgetype.PatternBoard;
 import org.opentripplanner.routing.edgetype.PatternHop;
+import org.opentripplanner.routing.edgetype.PreAlightEdge;
+import org.opentripplanner.routing.edgetype.PreBoardEdge;
 import org.opentripplanner.routing.edgetype.factory.GTFSPatternHopFactory;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.patch.Alert;
 import org.opentripplanner.routing.patch.AlertPatch;
 import org.opentripplanner.routing.services.TransitIndexService;
@@ -45,38 +53,46 @@ import org.opentripplanner.routing.transit_index.RouteSegment;
 import org.opentripplanner.routing.transit_index.RouteVariant;
 import org.opentripplanner.util.TestUtils;
 
+import com.vividsolutions.jts.geom.Coordinate;
+
 public class TestPatch extends TestCase {
     private Graph graph;
 
-    private TraverseOptions options;
+    private RoutingRequest options;
 
+    private GenericAStar aStar = new GenericAStar();
+    
     public void setUp() throws Exception {
 
         GtfsContext context = GtfsLibrary.readGtfs(new File(ConstantsForTests.FAKE_GTFS));
-
-        options = new TraverseOptions();
-        options.setGtfsContext(context);
-
+        options = new RoutingRequest();
         graph = new Graph();
         GTFSPatternHopFactory factory = new GTFSPatternHopFactory(context);
         factory.run(graph);
+        graph.putService(CalendarServiceData.class, GtfsLibrary.createCalendarServiceData(context.getDao()));
+        
         TransitIndexService index = new TransitIndexService() {
             /*
              * mock TransitIndexService always returns preboard/prealight edges for stop A and a
              * subset of variants for route 1
              */
             @Override
-            public Edge getPrealightEdge(AgencyAndId stop) {
-                return graph.getOutgoing("agency_A_arrive").iterator().next();
+            public PreAlightEdge getPreAlightEdge(AgencyAndId stop) {
+                return (PreAlightEdge) graph.getVertex("agency_A_arrive").getOutgoing().iterator().next();
             }
 
             @Override
-            public Edge getPreboardEdge(AgencyAndId stop) {
-                return graph.getIncoming("agency_A_depart").iterator().next();
+            public PreBoardEdge getPreBoardEdge(AgencyAndId stop) {
+                return (PreBoardEdge) graph.getVertex("agency_A_depart").getIncoming().iterator().next();
             }
 
             @Override
             public RouteVariant getVariantForTrip(AgencyAndId trip) {
+                return null;
+            }
+
+            @Override
+            public List<RouteVariant> getVariantsForAgency(String agency) {
                 return null;
             }
 
@@ -86,10 +102,10 @@ public class TestPatch extends TestCase {
                 route.setId(routeId);
                 route.setShortName(routeId.getId());
 
-                PatternBoard somePatternBoard = (PatternBoard) graph.getOutgoing("agency_A_depart")
-                        .iterator().next();
-                PatternHop somePatternHop = (PatternHop) graph.getOutgoing(
-                        somePatternBoard.getToVertex()).iterator().next();
+                PatternBoard somePatternBoard = (PatternBoard) graph.getVertex("agency_A_depart")
+                        .getOutgoing().iterator().next();
+                PatternHop somePatternHop = (PatternHop) somePatternBoard.getToVertex()
+                        .getOutgoing().iterator().next();
 
                 Stop stopA = somePatternHop.getStartStop();
                 ArrayList<Stop> stops = new ArrayList<Stop>();
@@ -116,6 +132,49 @@ public class TestPatch extends TestCase {
             public List<TraverseMode> getAllModes() {
                 return Collections.emptyList();
             }
+
+            @Override
+            public List<AgencyAndId> getAllRouteIds() {
+                return Collections.emptyList();
+            }
+
+            @Override
+            public void addCalendars(Collection<ServiceCalendar> allCalendars) {
+            }
+
+            @Override
+            public void addCalendarDates(Collection<ServiceCalendarDate> allDates) {
+            }
+
+            @Override
+            public List<String> getAllAgencies() {
+                return Arrays.asList("agency");
+            }
+
+            @Override
+            public List<ServiceCalendarDate> getCalendarDatesByAgency(String agency) {
+                return null;
+            }
+
+            @Override
+            public List<ServiceCalendar> getCalendarsByAgency(String agency) {
+                return null;
+            }
+
+            @Override
+            public Agency getAgency(String id) {
+                return null;
+            }
+
+            @Override
+            public List<AgencyAndId> getRoutesForStop(AgencyAndId stop) {
+                return null;
+            }
+
+            @Override
+            public Coordinate getCenter() {
+                return null;
+            }
         };
         graph.putService(TransitIndexService.class, index);
     }
@@ -135,8 +194,9 @@ public class TestPatch extends TestCase {
         ShortestPathTree spt;
         GraphPath path;
 
-        long startTime = TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0);
-        spt = AStar.getShortestPathTree(graph, stop_a, stop_e, startTime, options);
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 0, 0, 0); 
+        options.setRoutingContext(graph, stop_a, stop_e);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_e, true);
         assertNotNull(path);
@@ -147,10 +207,10 @@ public class TestPatch extends TestCase {
 
     public void testTimeRanges() {
         AlertPatch snp1 = new AlertPatch();
-        long breakTime = TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0);
+        long breakTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 0, 0, 0);
         snp1.addTimePeriod(0, breakTime); // until the beginning of the day
-        long secondPeriodStartTime = TestUtils.dateInSeconds(2009, 8, 7, 7, 0, 0);
-        long secondPeriodEndTime = TestUtils.dateInSeconds(2009, 8, 8, 0, 0, 0);
+        long secondPeriodStartTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 7, 0, 0);
+        long secondPeriodEndTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 8, 0, 0, 0);
         snp1.addTimePeriod(secondPeriodStartTime, secondPeriodEndTime);
         Alert note1 = Alert.createSimpleAlerts("The first note");
         snp1.setAlert(note1);
@@ -164,8 +224,9 @@ public class TestPatch extends TestCase {
         ShortestPathTree spt;
         GraphPath path;
 
-        long startTime = TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0);
-        spt = AStar.getShortestPathTree(graph, stop_a, stop_e, startTime, options);
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 0, 0, 0);
+        options.setRoutingContext(graph, stop_a, stop_e);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_e, true);
         assertNotNull(path);
@@ -173,8 +234,9 @@ public class TestPatch extends TestCase {
         assertNull(path.states.get(1).getBackEdgeNarrative().getNotes());
 
         // now a trip during the second period
-        startTime = TestUtils.dateInSeconds(2009, 8, 7, 8, 0, 0);
-        spt = AStar.getShortestPathTree(graph, stop_a, stop_e, startTime, options);
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 8, 0, 0);
+        options.setRoutingContext(graph, stop_a, stop_e);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_e, false); // do not optimize because we want the first trip
         assertNotNull(path);
@@ -199,8 +261,10 @@ public class TestPatch extends TestCase {
         ShortestPathTree spt;
         GraphPath path;
 
-        long startTime = TestUtils.dateInSeconds(2009, 8, 7, 7, 0, 0);
-        spt = AStar.getShortestPathTree(graph, stop_a, stop_e, startTime, options);
+        long startTime = 
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 7, 0, 0);
+        options.setRoutingContext(graph, stop_a, stop_e);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_e, false);
         assertNotNull(path);

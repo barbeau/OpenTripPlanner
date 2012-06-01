@@ -11,7 +11,6 @@ if(typeof(otp) == "undefined" || otp == null) otp = {};
 if(typeof(otp.config) == "undefined" || otp.config == null) otp.config = {};
 if(typeof(otp.config.locale) == "undefined" || otp.config.locale == null) otp.config.locale = otp.locale.English;
 
-
 // step 2: create an object of default otp.config default values (see step3 where we apply this to any existing config)
 otp.config_defaults = {
     routerId      : "",
@@ -20,36 +19,79 @@ otp.config_defaults = {
 
     planner : {
         url            : null,
-        showStopIds    : true,
+        printUrl       : "print.html",
+        maxTransfers   : null,  // when maxTransfers != null, value is sent down as maxTransfers param to the api (current api default maxTransfers=2)
+
+        // options to turn stuff on / off on the planner
+        options        : {
+            showElevationGraph    : true,   // turn on/off the southern panel that displays the elevation data
+            showBikeshareMode     : true,   // turn on/off the bikeshare options in the mode pull down
+            showTrainMode         : true,   // turn on/off the train options in the mode pull down
+            showWheelchairForm    : true,   // turn on/off the wheelchair check box (on by default)
+            showIntermediateForms : true,   // turn on/off the ability to plan routes with intermediate points 
+            showStopCodes         : true,   // show stop codes as part of the itinerary
+            showAgencyInfo        : true,   // show the 'service run by Yolobus' on each itinerary leg
+            showFareInfo          : true,   // show the fare information in the itinerary
+            showReverseButton     : true,   // turn on/off itinerary reverse button
+            showEditButton        : true,   // turn on/off itinerary edit button
+            showPrintButton       : true,   // turn on/off itinerary print button
+            showLinksButton       : true,   // turn on/off itinerary links button
+            useOptionDependencies : true,   // trip form changes based on mode and optimize flags (e.g., bike mode has no wheelchair or walk distance forms etc...) 
+            useRouteLongName      : false,  // format route name with both short-name and long-name...see / override Itinerary.makeRouteName() for different formatting options
+            appendGeocodeName     : true,   // true = send string:lat,lon parameter format to OTP, else just lat,lon goes to OTP 
+            OPTIONS_NOTE: "THIS IS A STRUCTURE USED TO CUSTOMIZE THE TRIP FORMS AND OTHER BEHAVIORS"
+        },
+
+        // will add a tree node to the bottom of the itinerary with this message
+        itineraryMessages : {
+            icon            : null,
+            transit         : "This is an Itinerary Message test...",
+            transit         : null, 
+            bus             : null,
+            train           : null,
+            bicycle         : null,
+            bicycle_transit : null,
+            walk            : null 
+        },
+
         linkTemplates  : [
-            {name:otp.config.locale.tripPlanner.link.text,  url:'index.html?' + otp.planner.ParamTemplate}, // TODO - this will cause an error if otp.planner is not defined
+            {name:otp.config.locale.tripPlanner.link.text,  url:'index.html#/' + otp.planner.ParamTemplate}, // TODO - this will cause an error if otp.planner is not defined
             {name:otp.config.locale.tripPlanner.link.trip_separator, separator:true},
             {name:otp.config.locale.tripPlanner.link.google_transit, url: otp.config.locale.tripPlanner.link.google_domain + '/maps?<tpl if="arriveBy == \'Arrive\'">ttype=arr&</tpl>date={date}&time={time}&daddr={toLat},{toLon}&saddr={fromLat},{fromLon}&ie=UTF8&dirflg=r'},
-//            {name:'TriMet (Map Planner)',  url:'http://maps.trimet.org?<tpl if="opt == \'TRANSFERS\'">min=X&</tpl><tpl if="maxWalkDistance &gt; 1000.0">walk=0.9999&</tpl>arr={arriveBy}&date={date}&time={time}&from={fromLat},{fromLon}&to={toLat},{toLon}&submit'},
-//            {name:'TriMet (Text Planner - time and date reset to current)', url:'http://trimet.org/go/cgi-bin/plantrip.cgi?<tpl if="arriveBy == \'Arrive\'">Arr=A&</tpl><tpl if="opt == \'TRANSFERS\'">Min=X&</tpl><tpl if="maxWalkDistance &gt; 1000.0">Walk=0.9999&</tpl>date={date}&time={time}&from={fromLat},{fromLon}&to={toLat},{toLon}&submit'},            
             {name:otp.config.locale.tripPlanner.link.bike_separator, separator:true},
             {name:otp.config.locale.tripPlanner.link.google_bikes,   url:otp.config.locale.tripPlanner.link.google_domain + '/maps?daddr={toLat},{toLon}&saddr={fromLat},{fromLon}&ie=UTF8&dirflg=b'},
             {name:otp.config.locale.tripPlanner.link.walk_separator, separator:true},
             {name:otp.config.locale.tripPlanner.link.google_walk,    url:otp.config.locale.tripPlanner.link.google_domain + '/maps?daddr={toLat},{toLon}&saddr={fromLat},{fromLon}&ie=UTF8&dirflg=w'}
         ],
 
-        showWheelchairForm    : true,   // turn on/off the wheelchair check box (on by default)
-        showStopIds           : true,   // show stop ids as part of the itinerary
-        showPrintButton       : false,  // turn on/off itinerary print button
-        showLinksButton       : true,   // turn on/off itinerary links button
-        useOptionDependencies : true,   // trip form changes based on mode and optimize flags (e.g., bike mode has no wheelchair or walk distance forms etc...) 
-        useRouteLongName      : false,  // format route name with both short-name and long-name...see / override Itinerary.makeRouteName() for different formatting options
+        geocoder  :
+        {
+            enabled : false,
+            url     : "/geocoder/geocode",  
+            addressParamName : "address"
+        },
+        fromToOverride : new Ext.Template('<div class="mapHelp">' + otp.config.locale.config.rightClickMsg + '</div>')
 
+        /* debug geocoder */
+        /*  *
+        ,fromToOverride:null,
         geocoder  :
         {
             enabled : true,
-            url     : "/opentripplanner-geocoder/geocode",  
-            // debug-url : '/js/otp/planner/test/geo-zoo.xml',
-            // debug-url : '/js/otp/planner/test/geo-multi.xml', 
-            // debut-enabled : true,
+            isSolr  : true,
+            url     : "/js/otp/planner/test/solr-geo.json",
             addressParamName : "address"
-        },
-        fromToOverride : null //: new Ext.Template('<div class="mapHelp">' + otp.config.locale.config.rightClickMsg + '</div>')
+        }
+        /*  *
+        ,fromToOverride:null,
+        geocoder  :
+        {
+            enabled : true,
+            isSolr  : false,
+            url     : "/js/otp/planner/test/geo-multi.xml",
+            addressParamName : "address"
+        }
+        /* */
     },
 
     map : {
@@ -68,24 +110,60 @@ otp.config_defaults = {
 
         // Instead of specifying just the base layer options, you can instead
         // specify the full base layer object.
-        // The example below creates a new base layer that uses the default OSM
-        // tiles.
-        baseLayer: new OpenLayers.Layer.OSM({
-            url: [
-                  "http://a.tah.openstreetmap.org/Tiles/tile/${z}/${x}/${y}.png",
-                  "http://b.tah.openstreetmap.org/Tiles/tile/${z}/${x}/${y}.png",
-                  "http://c.tah.openstreetmap.org/Tiles/tile/${z}/${x}/${y}.png"
-            ],
-            numZoomLevels: 20
-        }),
-
-        // here's the MapQuest baseMap option for basemap tiles
-        // note, the attribution is wrong (leaves out MapQuest info), so it's commented
-        MQ_baseLayer: new OpenLayers.Layer.OSM("MapQuest", "http://otile1.mqcdn.com/tiles/1.0.0/osm/${z}/${x}/${y}.png"),
-
+        // If only one layer is defined in the baseLayer array, the layer switcher is disabled.
+        // If there are several layers in the baseLayer array, the layer switcher is enabled and the first layer in the array becomes the default layer
+        baseLayer: [
+           // MapBox Streets Layer
+           new OpenLayers.Layer.OSM(
+               "Mapbox Streets", [
+                   "http://a.tiles.mapbox.com/v3/mapbox.mapbox-streets/${z}/${x}/${y}.png",
+                   "http://b.tiles.mapbox.com/v3/mapbox.mapbox-streets/${z}/${x}/${y}.png",
+                   "http://c.tiles.mapbox.com/v3/mapbox.mapbox-streets/${z}/${x}/${y}.png",
+                   "http://d.tiles.mapbox.com/v3/mapbox.mapbox-streets/${z}/${x}/${y}.png"
+               ],
+               {
+                   numZoomLevels: 18,
+                   attribution:"Data<a href='http://creativecommons.org/licenses/by-sa/2.0/' target='_blank'> CC-BY-SA </a>" +
+                   "by<a href='http://openstreetmap.org/' target='_blank'> OpenStreetMap.</a> " +
+                   "Tiles from<a href='http://mapbox.com/about/maps' target='_blank'> MapBox Streets.</a>"
+               }
+           ),
+           // Regular Open Street Map server
+           new OpenLayers.Layer.OSM(
+               "Open Street Map"
+           ),
+           // Cycle map tiles
+           new OpenLayers.Layer.OSM(
+               "Open Cycle Map", [
+                   "http://a.tile.opencyclemap.org/cycle/${z}/${x}/${y}.png",
+                   "http://b.tile.opencyclemap.org/cycle/${z}/${x}/${y}.png",
+                   "http://c.tile.opencyclemap.org/cycle/${z}/${x}/${y}.png"
+                ],
+                {
+                    numZoomLevels: 17,
+                    attribution:"Data <a href='http://creativecommons.org/licenses/by-sa/2.0/'> CC-BY-SA</a> by <a href='www.opencyclemap.org'>OpenCycleMap </a> and <a href='http://openstreetmap.org/'> Open Street Map</a>"
+                }
+           ),
+           // here's the MapQuest baseMap option for basemap tiles
+           new OpenLayers.Layer.OSM(
+               "OSM MapQuest",[
+                   "http://otile1.mqcdn.com/tiles/1.0.0/osm/${z}/${x}/${y}.png",
+                   "http://otile2.mqcdn.com/tiles/1.0.0/osm/${z}/${x}/${y}.png",
+                   "http://otile3.mqcdn.com/tiles/1.0.0/osm/${z}/${x}/${y}.png",
+                   "http://otile4.mqcdn.com/tiles/1.0.0/osm/${z}/${x}/${y}.png"
+               ],
+               {
+                   sphericalMecator : true,
+                   isBaseLayer      : true,
+                   numZoomLevels    : 19,
+                   attribution:"Data <a href='http://creativecommons.org/licenses/by-sa/2.0/'> CC-BY-SA </a> by  <a href='http://openstreetmap.org/'> OpenStreetMap</a>."
+                   +" Tiles courtesy of <a href='http://open.mapquest.com/' target='_blank'>MapQuest</a>"
+               }
+           )
+        ],
 
         // NOTE: this object is ignored if a baseLayer (which is an instance of OpenLayers.Layer)
-        // config object used in the creation of a new base layer for the map. 
+        // config object used in the creation of a new base layer for the map.
         baseLayerOptions: {
             projection : new OpenLayers.Projection("EPSG:4326"),
             url        : 'http://maps.opengeo.org/geowebcache/service/wms',
@@ -152,7 +230,8 @@ otp.config_defaults = {
 };
 try {
     // step 3: apply our default to the existing (possibly empty) otp config
-    otp.inherit(otp.config, otp.config_defaults);
+    otp.inherit(otp.config, otp.config_defaults);       // step 3a: build the object up
+    otp.configure(otp.config, otp.config_defaults);     // step 3b: make sure any / all local changes above get applied
     console.log("otp.config updated with default items from otp.config_static");
 } catch(e) {
     console.log("ERROR: was unable to run otp.inherid override in config.js - got this exception: " + e);

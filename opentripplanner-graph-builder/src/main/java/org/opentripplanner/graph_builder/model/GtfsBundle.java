@@ -20,11 +20,17 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.ZipFile;
 
+import org.apache.http.client.ClientProtocolException;
 import org.onebusaway.csv_entities.CsvInputSource;
 import org.onebusaway.csv_entities.ZipFileCsvInputSource;
 import org.opentripplanner.graph_builder.impl.DownloadableGtfsInputSource;
+import org.opentripplanner.util.HttpUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class GtfsBundle {
+
+    private static final Logger _log = LoggerFactory.getLogger(GtfsBundle.class);
 
     private File path;
 
@@ -36,7 +42,11 @@ public class GtfsBundle {
 
     private Boolean defaultBikesAllowed = false;
 
+    private boolean transfersTxtDefinesStationPaths = false;
+
     private Map<String, String> agencyIdMappings = new HashMap<String, String>();
+
+    private int defaultStreetToStopTime;
 
     public void setPath(File path) {
         this.path = path;
@@ -67,6 +77,18 @@ public class GtfsBundle {
         return csvInputSource;
     }
 
+    public String toString () {
+        String src; 
+        if (path != null) {
+            src = path.toString();
+        } else if (url != null) {
+            src = url.toString();
+        } else {
+            src = "(no source)";
+        }
+        return "GTFS bundle at " + src;
+    }
+    
     /**
      * So that you can load multiple gtfs feeds into the same database / system without entity id
      * collisions, everything has an agency id, including entities like stops, shapes, and service
@@ -106,5 +128,55 @@ public class GtfsBundle {
 
     public void setDefaultBikesAllowed(Boolean defaultBikesAllowed) {
         this.defaultBikesAllowed = defaultBikesAllowed;
+    }
+
+    /**
+     * Transfers.txt usually specifies where the transit operator prefers people to transfer, 
+     * due to schedule structure and other factors.
+     * 
+     * However, in systems like the NYC subway system, transfers.txt can partially substitute 
+     * for the missing pathways.txt file.  In this case, transfer edges will be created between
+     * stops where transfers are defined.
+     * 
+     * @return
+     */
+    public boolean doesTransfersTxtDefineStationPaths() {
+        return transfersTxtDefinesStationPaths;
+    }
+
+    public void setTransfersTxtDefinesStationPaths(boolean transfersTxtDefinesStationPaths) {
+        this.transfersTxtDefinesStationPaths = transfersTxtDefinesStationPaths;
+    }
+
+    public int getDefaultStreetToStopTime() {
+        return defaultStreetToStopTime;
+    }
+
+    public void setDefaultStreetToStopTime(int time) {
+        defaultStreetToStopTime = time;
+    }
+    
+    public void checkInputs() {
+        if (csvInputSource != null) {
+            _log.warn("unknown CSV source type; cannot check inputs");
+            return;
+        }
+        if (path != null) {
+            if (!path.exists()) {
+                throw new RuntimeException("GTFS Path " + path + " does not exist.");
+            }
+            if (!path.canRead()) {
+                throw new RuntimeException("GTFS Path " + path + " cannot be read.");
+            }
+        } else if (url != null) {
+            try {
+                HttpUtils.testUrl(url.toExternalForm());
+            } catch (ClientProtocolException e) {
+                throw new RuntimeException(e);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
     }
 }

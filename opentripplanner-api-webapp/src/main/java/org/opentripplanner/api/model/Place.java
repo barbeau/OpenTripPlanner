@@ -13,9 +13,9 @@
 
 package org.opentripplanner.api.model; 
 
+import java.util.Calendar;
 import java.util.Date;
-import java.util.logging.Logger; 
-
+import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement; 
 
 import org.onebusaway.gtfs.model.AgencyAndId;
@@ -25,7 +25,6 @@ import org.opentripplanner.util.Constants;
 * A Place is where a journey starts or ends, or a transit stop along the way.
 */ 
 public class Place {
-    protected static final Logger LOGGER = Logger.getLogger(Place.class.getCanonicalName());
 
     /** 
      * For transit stops, the name of the stop.  For points of interest, the name of the POI.
@@ -33,10 +32,15 @@ public class Place {
     public String name = null;
 
     /** 
-     * The ID of the stop.  Depending on the transit agency, this may or may not be something that
-     * users care about.
+     * The ID of the stop. This is often something that users don't care about.
      */
     public AgencyAndId stopId = null;
+
+    /** 
+     * The "code" of the stop. Depending on the transit agency, this is often
+     * something that users care about.
+     */
+    public String stopCode = null;
 
     /**
      * The longitude of the place.
@@ -51,12 +55,18 @@ public class Place {
     /**
      * The time the rider will arrive at the place.
      */
-    public Date arrival = null;
+    public Calendar arrival = null;
 
     /**
      * The time the rider will depart the place.
      */
-    public Date departure = null;
+    public Calendar departure = null;
+
+    @XmlAttribute
+    public String orig;
+
+    @XmlAttribute
+    public String zoneId;
 
     /**
      * Returns the geometry in GeoJSON format
@@ -77,14 +87,8 @@ public class Place {
         this.name = name;
     }
 
-    public Place(Double lon, Double lat, String name, AgencyAndId stopId) {
+    public Place(Double lon, Double lat, String name, Calendar timeAtState) {
         this(lon, lat, name);
-        this.stopId = stopId;
-	}
-
-	public Place(Double lon, Double lat, String name, AgencyAndId stopId,
-			Date time) {
-		this(lon, lat, name, stopId);
-		this.arrival = departure = time;
-	}
+        this.arrival = departure = timeAtState;
+    }
 }

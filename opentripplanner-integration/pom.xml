@@ -1,17 +1,18 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
+    
     <artifactId>opentripplanner-integration</artifactId>
     <packaging>jar</packaging>
-    <name>opentripplanner-integration</name>
+    <name>OpenTripPlanner Integration Testing</name>
 
     <parent>
         <groupId>org.opentripplanner</groupId>
         <artifactId>opentripplanner</artifactId>
-        <version>0.4.3-SNAPSHOT</version>
+        <version>0.8.0-SNAPSHOT</version>
     </parent>
 
     <properties>
-        <tomcat.version>5.5.28</tomcat.version>
+        <tomcat.version>6.0.35</tomcat.version>
     </properties>
 
     <dependencies>
@@ -44,9 +45,9 @@
             <version>1.2</version>
         </dependency>
         <dependency>
-            <groupId>org.json</groupId>
-            <artifactId>json</artifactId>
-            <version>20090211</version>
+        	<groupId>org.codehaus.jackson</groupId>
+        	<artifactId>jackson-mapper-asl</artifactId>
+        	<version>1.9.2</version>
         </dependency>
     </dependencies>
 
@@ -101,7 +102,7 @@
                     </execution>
                 </executions>
             </plugin>
-            <!-- Create a custom opentriplanner-api-webapp war with the path to our graph>
+            <!-- Create a custom opentriplanner-api-webapp war with the path to our graph -->
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <executions>
@@ -120,10 +121,11 @@
                     </execution>
                 </executions>
             </plugin>
-            <!- Start up tomcat with our custom wars and graph >
+            <!-- Start up tomcat with our custom wars and graph -->
             <plugin>
                 <groupId>org.codehaus.cargo</groupId>
                 <artifactId>cargo-maven2-plugin</artifactId>
+                <version>1.2.0</version>
                 <executions>
                     <execution>
                         <id>tomcat-execution</id>
@@ -132,18 +134,16 @@
                             <goal>start</goal>
                         </goals>
                         <configuration>
-
                             <container>
-                                <containerId>tomcat5x</containerId>
-                                <log>${project.build.directory}/tomcat5x/cargo.log</log>
+                                <containerId>tomcat6x</containerId>
+                                <log>${project.build.directory}/tomcat6x/cargo.log</log>
                                 <zipUrlInstaller>
-                                    <url>http://www.apache.org/dist/tomcat/tomcat-5/v${tomcat.version}/bin/apache-tomcat-${tomcat.version}.zip</url>
-                                    <installDir>${installDir}</installDir>
+                                    <url>http://www.apache.org/dist/tomcat/tomcat-6/v${tomcat.version}/bin/apache-tomcat-${tomcat.version}.zip</url>
                                 </zipUrlInstaller>
                             </container>
 
                             <configuration>
-                                <home>${project.build.directory}/tomcat5x/container</home>
+                                <home>${project.build.directory}/tomcat6x/container</home>
                                 <properties>
                                     <cargo.servlet.port>8080</cargo.servlet.port>
                                     <cargo.logging>high</cargo.logging>
@@ -152,6 +152,8 @@
                                 </properties>
                                 <deployables>
                                     <deployable>
+                                        <groupId>org.opentripplanner</groupId>
+                                        <artifactId>opentripplanner-api-webapp</artifactId>
                                         <location>${project.build.directory}/opentripplanner-api-webapp-integration.war</location>
                                         <type>war</type>
                                         <properties>
@@ -165,11 +167,10 @@
                                     </deployable>
                                 </deployables>
                             </configuration>
-                            <wait>false</wait>
                         </configuration>
                     </execution>
                 </executions>
-            </plugin-->
+            </plugin>
         </plugins>
     </build>
 
@@ -182,9 +183,15 @@
                     <plugin>
                         <groupId>org.codehaus.cargo</groupId>
                         <artifactId>cargo-maven2-plugin</artifactId>
-                        <configuration>
-                            <wait>true</wait>
-                        </configuration>
+                        <executions>
+                          <execution>
+                            <id>tomcat-execution</id>
+                            <phase>pre-integration-test</phase>
+                            <goals>
+                              <goal>run</goal>
+                            </goals>
+                            </execution>
+                          </executions>
                     </plugin>
                 </plugins>
             </build>

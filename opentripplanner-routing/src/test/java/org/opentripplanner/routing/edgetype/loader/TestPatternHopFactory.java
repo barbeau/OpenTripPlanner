@@ -13,49 +13,57 @@
 
 package org.opentripplanner.routing.edgetype.loader;
 
-import static org.opentripplanner.common.IterableLibrary.*;
+import static org.opentripplanner.common.IterableLibrary.filter;
+
 import java.io.File;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.GregorianCalendar;
+import java.util.Iterator;
+import java.util.TimeZone;
 
 import junit.framework.TestCase;
 
+import org.onebusaway.gtfs.model.calendar.CalendarServiceData;
+import org.onebusaway.gtfs.model.StopTime;
 import org.opentripplanner.ConstantsForTests;
 import org.opentripplanner.common.geometry.GeometryUtils;
 import org.opentripplanner.gtfs.GtfsContext;
 import org.opentripplanner.gtfs.GtfsLibrary;
-import org.opentripplanner.util.TestUtils;
-import org.opentripplanner.routing.algorithm.AStar;
-import org.opentripplanner.routing.core.DirectEdge;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
+import org.opentripplanner.routing.algorithm.GenericAStar;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation;
 import org.opentripplanner.routing.core.OptimizeType;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.TransferTable;
 import org.opentripplanner.routing.core.TraverseModeSet;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation.Variety;
 import org.opentripplanner.routing.edgetype.Alight;
+import org.opentripplanner.routing.edgetype.FrequencyBasedTripPattern;
+import org.opentripplanner.routing.edgetype.FrequencyBoard;
 import org.opentripplanner.routing.edgetype.PatternAlight;
 import org.opentripplanner.routing.edgetype.PatternBoard;
 import org.opentripplanner.routing.edgetype.PatternDwell;
 import org.opentripplanner.routing.edgetype.PatternHop;
 import org.opentripplanner.routing.edgetype.SimpleEdge;
 import org.opentripplanner.routing.edgetype.StreetTransitLink;
-import org.opentripplanner.routing.edgetype.StreetVertex;
 import org.opentripplanner.routing.edgetype.TurnEdge;
 import org.opentripplanner.routing.edgetype.factory.GTFSPatternHopFactory;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.spt.GraphPath;
 import org.opentripplanner.routing.spt.ShortestPathTree;
-import org.opentripplanner.routing.core.TransitStop;
+import org.opentripplanner.routing.vertextype.TransitStop;
+import org.opentripplanner.routing.vertextype.TurnVertex;
+import org.opentripplanner.util.TestUtils;
 
 import com.vividsolutions.jts.geom.Geometry;
 
 public class TestPatternHopFactory extends TestCase {
 
     private Graph graph;
-
+    private GenericAStar aStar = new GenericAStar();
     private GtfsContext context;
 
     public void setUp() throws Exception {
@@ -65,28 +73,42 @@ public class TestPatternHopFactory extends TestCase {
 
         GTFSPatternHopFactory factory = new GTFSPatternHopFactory(context);
         factory.run(graph);
-
+        graph.putService(CalendarServiceData.class, GtfsLibrary.createCalendarServiceData(context.getDao()));
+        
         String[] stops = {"agency_A", "agency_B", "agency_C", "agency_D", "agency_E"};
         for (int i = 0; i < stops.length; ++i) {
-            Vertex stop = graph.getVertex(stops[i]);
+            TransitStop stop = (TransitStop) (graph.getVertex(stops[i]));
             
-            StreetVertex front = (StreetVertex) graph.addVertex(new StreetVertex("near_" + stop.getStopId(), GeometryUtils.makeLineString(stop.getX() + 0.0001, stop.getY() + 0.0001, stop.getX() - 0.0001, stop.getY() - 0.0001), "near " + stop.getStopId(), 100, false, null));
-            StreetVertex back = (StreetVertex) graph.addVertex(new StreetVertex("near_" + stop.getStopId(), GeometryUtils.makeLineString(stop.getX() - 0.0001, stop.getY() - 0.0001, stop.getX() + 0.0001, stop.getY() + 0.0001), "near " + stop.getStopId(), 100, true, null));
+            TurnVertex front = new TurnVertex(graph, "near_" + stop.getStopId(), GeometryUtils.makeLineString(stop.getX() + 0.0001, stop.getY() + 0.0001, stop.getX() - 0.0001, stop.getY() - 0.0001), "near " + stop.getStopId(), 100, false, null);
+            TurnVertex back =  new TurnVertex(graph, "near_" + stop.getStopId(), GeometryUtils.makeLineString(stop.getX() - 0.0001, stop.getY() - 0.0001, stop.getX() + 0.0001, stop.getY() + 0.0001), "near " + stop.getStopId(), 100, true, null);
             
-            TurnEdge street = new TurnEdge(front, back);
-            graph.addEdge(street);
-            
+            TurnEdge street1 = new TurnEdge(front, back);
             TurnEdge street2 = new TurnEdge(back, front);
-            graph.addEdge(street2);
         }
 
         NetworkLinker nl = new NetworkLinker(graph);
         nl.createLinkage();
     }
 
+    public void testAnnotation() {
+        boolean found = false;
+        for (GraphBuilderAnnotation annotation : graph.getBuilderAnnotations()) {
+            if (annotation.getVariety().equals(Variety.NEGATIVE_HOP_TIME)) {
+                Collection<Object> objects = annotation.getReferencedObjects();
+                assertTrue(objects.size() == 2);
+                Iterator<Object> iter = objects.iterator();
+                StopTime st0 = (StopTime) iter.next();
+                StopTime st1 = (StopTime) iter.next();
+                assertTrue(st0.getDepartureTime() > st1.getArrivalTime());
+                found = true;
+            }
+        }
+        assertTrue(found);
+    }
+    
     public void testBoardAlight() throws Exception {
-        GraphVertex stop_a_depart = graph.getGraphVertex("agency_A_depart");
-        GraphVertex stop_b_depart = graph.getGraphVertex("agency_B_depart");
+        Vertex stop_a_depart = graph.getVertex("agency_A_depart");
+        Vertex stop_b_depart = graph.getVertex("agency_B_depart");
         
         assertEquals(1, stop_a_depart.getDegreeOut());
         assertEquals(3, stop_b_depart.getDegreeOut());
@@ -96,11 +118,11 @@ public class TestPatternHopFactory extends TestCase {
         }
         
         PatternBoard pb = (PatternBoard) stop_a_depart.getOutgoing().iterator().next();
-        GraphVertex journey_a_1 = graph.getGraphVertex(pb.getToVertex());
+        Vertex journey_a_1 = pb.getToVertex();
 
         assertEquals(1, journey_a_1.getDegreeIn());
 
-        for (DirectEdge e : filter(journey_a_1.getOutgoing(), DirectEdge.class)) {
+        for (Edge e : journey_a_1.getOutgoing()) {
             if (e.getToVertex() instanceof TransitStop) {
                 assertEquals(Alight.class, e.getClass());
             } else {
@@ -117,48 +139,51 @@ public class TestPatternHopFactory extends TestCase {
         Vertex stop_d = graph.getVertex("agency_D");
         Vertex stop_e = graph.getVertex("agency_E");
 
-        TraverseOptions options = new TraverseOptions();
-        options.setGtfsContext(context);
+        RoutingRequest options = new RoutingRequest();
         // test feed is designed for instantaneous transfers
         options.minTransferTime = 0;
+
+        long startTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 0, 0, 0);
+        options.dateTime = startTime;
+
         ShortestPathTree spt;
         GraphPath path;
 
         // A to B
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_b.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_a, stop_b);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_b, false);
         assertNotNull(path);
         assertEquals(6, path.states.size());
 
         // A to C
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_c.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_a, stop_c);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_c, false);
         assertNotNull(path);
         assertEquals(8, path.states.size());
 
         // A to D (change at C)
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_d.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_a, stop_d);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_d, false);
         assertNotNull(path);
         // there are two paths of different lengths 
         // both arrive at 40 minutes after midnight
         //assertTrue(path.states.size() == 13);
-        long endTime = TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0) + 40 * 60;
+        long endTime = startTime + 40 * 60;
         assertEquals(endTime, path.getEndTime());
 
         //A to E (change at C)
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_e.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_a, stop_e);
+        spt = aStar.getShortestPathTree(options);
         path = spt.getPath(stop_e, false);
         assertNotNull(path);
         assertTrue(path.states.size() == 14);
-        endTime =  TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0) + 70 * 60;
+        endTime = startTime + 70 * 60;
         assertEquals(endTime, path.getEndTime());
     }
 
@@ -169,16 +194,12 @@ public class TestPatternHopFactory extends TestCase {
         Vertex stop_f = graph.getVertex("agency_F_depart");
         Vertex stop_h = graph.getVertex("agency_H_arrive");
 
-        TraverseOptions options = new TraverseOptions();
-        options.setGtfsContext(context);
+        RoutingRequest options = new RoutingRequest();
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 18, 5, 0, 0);
+        options.setRoutingContext(graph, stop_f, stop_h);
 
-        ShortestPathTree spt;
-        GraphPath path;
-
-        spt = AStar.getShortestPathTree(graph, stop_f, stop_h,  
-                TestUtils.dateInSeconds(2009, 8, 18, 5, 0, 0), options);
-
-        path = spt.getPath(stop_h, false);
+        ShortestPathTree spt = aStar.getShortestPathTree(options);
+        GraphPath path = spt.getPath(stop_h, false);
         assertNotNull(path);
         assertEquals(5, path.states.size());
     }
@@ -188,25 +209,24 @@ public class TestPatternHopFactory extends TestCase {
         Vertex stop_g = graph.getVertex("agency_G_depart");
         Vertex stop_h = graph.getVertex("agency_H_arrive");
 
-        TraverseOptions options = new TraverseOptions();
-        options.setGtfsContext(context);
-
         ShortestPathTree spt;
         GraphPath path;
+        RoutingRequest options = new RoutingRequest();
 
         // Friday evening
-        spt = AStar.getShortestPathTree(graph, stop_g.getLabel(), stop_h.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 18, 23, 20, 0), options);
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 18, 23, 20, 0); 
+        options.setRoutingContext(graph, stop_g, stop_h);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_h, false);
         assertNotNull(path);
         assertEquals(4, path.states.size());
 
         // Saturday morning
-        long startTime = TestUtils.dateInSeconds(2009, 8, 19, 0, 5, 0);
-
-        spt = AStar.getShortestPathTree(graph, stop_g.getLabel(), stop_h.getLabel(),  
-                startTime, options);
+        long startTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 19, 0, 5, 0);
+        options.dateTime = startTime;
+        options.setRoutingContext(graph, stop_g.getLabel(), stop_h.getLabel());
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_h, false);
         assertNotNull(path);
@@ -216,8 +236,8 @@ public class TestPatternHopFactory extends TestCase {
     }
 
     public PatternHop getHopOut(Vertex v) {
-        for (PatternBoard e : filter(graph.getOutgoing(v), PatternBoard.class)) {
-            for (PatternHop f : filter(graph.getOutgoing(e.getToVertex()), PatternHop.class)) {
+        for (PatternBoard e : filter(v.getOutgoing(), PatternBoard.class)) {
+            for (PatternHop f : filter(e.getToVertex().getOutgoing(), PatternHop.class)) {
                 return f;
             }
         }
@@ -250,24 +270,28 @@ public class TestPatternHopFactory extends TestCase {
         Vertex stop_o = graph.getVertex("agency_O_depart");
         Vertex stop_p = graph.getVertex("agency_P");
         int i = 0;
-        for (@SuppressWarnings("unused") Edge e: graph.getOutgoing(stop_o)) {
+        for (@SuppressWarnings("unused") Edge e: stop_o.getOutgoing()) {
             ++i;
         }
         assertTrue(i == 3);
 
-        long startTime =  TestUtils.dateInSeconds(2009, 8, 19, 12, 0, 0);
-        TraverseOptions options = new TraverseOptions(context);
-        ShortestPathTree spt = AStar.getShortestPathTree(graph, stop_o, stop_p,  startTime, options );
+        long startTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 19, 12, 0, 0);
+        RoutingRequest options = new RoutingRequest();
+        options.dateTime = startTime;
+        options.setRoutingContext(graph, stop_o, stop_p);
+        ShortestPathTree spt = aStar.getShortestPathTree(options);
         GraphPath path = spt.getPath(stop_p, false);
         assertNotNull(path);
-        long endTime = TestUtils.dateInSeconds(2009, 8, 19, 12, 10, 0);
+        long endTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 19, 12, 10, 0);
         assertEquals(endTime, path.getEndTime());
 
-        startTime = TestUtils.dateInSeconds(2009, 8, 19, 12, 0, 1);
-        spt = AStar.getShortestPathTree(graph, stop_o, stop_p,  startTime, options );
+        startTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 19, 12, 0, 1);
+        options.dateTime = startTime;
+        options.setRoutingContext(graph, stop_o, stop_p);
+        spt = aStar.getShortestPathTree(options);
         path = spt.getPath(stop_p, false);
         assertNotNull(path);
-        endTime =  TestUtils.dateInSeconds(2009, 8, 19, 15, 10, 0);
+        endTime =  TestUtils.dateInSeconds("America/New_York", 2009, 8, 19, 15, 10, 0);
         assertEquals(endTime, path.getEndTime());
     }
 
@@ -280,15 +304,14 @@ public class TestPatternHopFactory extends TestCase {
         Vertex e_arrive = graph.getVertex("agency_E_arrive");
         Vertex f_depart = graph.getVertex("agency_F_depart");
         Edge edge = new SimpleEdge(e_arrive, f_depart, 10000, 10000);
-        graph.addEdge(e_arrive, f_depart, edge);
         
-        long startTime = TestUtils.dateInSeconds(2009, 8, 18, 0, 50, 0);
+        long startTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 18, 0, 50, 0);
         Vertex stop_b = graph.getVertex("agency_B_depart");
         Vertex stop_g = graph.getVertex("agency_G_arrive");
-        TraverseOptions options = new TraverseOptions(context);
-
-        ShortestPathTree spt = AStar.getShortestPathTree(graph, stop_b, stop_g, 
-                 startTime, options);
+        RoutingRequest options = new RoutingRequest();
+        options.dateTime = startTime;
+        options.setRoutingContext(graph, stop_b, stop_g);
+        ShortestPathTree spt = aStar.getShortestPathTree(options);
         
         GraphPath path = spt.getPath(stop_g, false);
         assertNotNull(path);
@@ -296,19 +319,20 @@ public class TestPatternHopFactory extends TestCase {
         assertTrue("expected to use much later trip due to min transfer time", path.getEndTime() - startTime > 4.5 * 60 * 60);
         
         /* cleanup */
-        graph.getGraphVertex(e_arrive).removeOutgoing(edge);
-        graph.getGraphVertex(f_depart).removeIncoming(edge);
+        e_arrive.removeOutgoing(edge);
+        f_depart.removeIncoming(edge);
     }
 
     public void testInterlining() throws Exception {
         Vertex stop_i = graph.getVertex("agency_I_depart");
         Vertex stop_k = graph.getVertex("agency_K_arrive");
 
-        long startTime = TestUtils.dateInSeconds(2009, 8, 19, 12, 0, 0);
-        TraverseOptions options = new TraverseOptions(context);
-
-        ShortestPathTree spt = AStar.getShortestPathTree(graph, stop_i, stop_k, 
-                 startTime, options);
+        long startTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 19, 12, 0, 0);
+        RoutingRequest options = new RoutingRequest();
+        options.dateTime = startTime;
+        options.setRoutingContext(graph, stop_i, stop_k);
+        ShortestPathTree spt = aStar.getShortestPathTree(options);
+        
         GraphPath path = spt.getPath(stop_k, false);
         int num_alights = 0;
         for (State s : path.states) {
@@ -322,8 +346,8 @@ public class TestPatternHopFactory extends TestCase {
         assertEquals(1, num_alights);
         
         options.setArriveBy(true);
-        spt = AStar.getShortestPathTree(graph, stop_i, stop_k, 
-                 startTime, options);
+        options.setRoutingContext(graph, stop_i, stop_k);
+        spt = aStar.getShortestPathTree(options);
         path = spt.getPath(stop_i, false);
 //        path.reverse();
         num_alights = 0;
@@ -344,18 +368,17 @@ public class TestPatternHopFactory extends TestCase {
 
         ShortestPathTree spt;
 
-        TraverseOptions options = new TraverseOptions(context);
+        RoutingRequest options = new RoutingRequest();
         options.setModes(new TraverseModeSet("TRAINISH"));
-
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_b.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 0, 0, 0, 0), options );
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 0, 0, 0, 0);
+        options.setRoutingContext(graph, stop_a, stop_b);
+        spt = aStar.getShortestPathTree(options );
 
         //a to b is bus only
         assertNull(spt.getPath(stop_b, false));
         
         options.setModes(new TraverseModeSet("TRAINISH,BUSISH"));
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_b.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 0, 0, 0, 0), options );
+        spt = aStar.getShortestPathTree(options);
 
         assertNotNull(spt.getPath(stop_b, false));
     }
@@ -363,13 +386,14 @@ public class TestPatternHopFactory extends TestCase {
     public void testTimelessStops() throws Exception {
         Vertex stop_d = graph.getVertex("agency_D");
         Vertex stop_c = graph.getVertex("agency_C");
-        TraverseOptions options = new TraverseOptions(context);
-        ShortestPathTree spt = AStar.getShortestPathTree(graph, stop_d.getLabel(),stop_c.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 1, 10, 0, 0), options);
+        RoutingRequest options = new RoutingRequest();
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 1, 10, 0, 0);
+        options.setRoutingContext(graph, stop_d, stop_c);
+        ShortestPathTree spt = aStar.getShortestPathTree(options);
 
         GraphPath path = spt.getPath(stop_c, false);
         assertNotNull(path);
-        assertEquals(TestUtils.dateInSeconds(2009, 8, 1, 11, 0, 0), path.getEndTime());
+        assertEquals(TestUtils.dateInSeconds("America/New_York", 2009, 8, 1, 11, 0, 0), path.getEndTime());
     }
 
     public void testTripBikesAllowed() throws Exception {
@@ -378,29 +402,32 @@ public class TestPatternHopFactory extends TestCase {
         Vertex stop_c = graph.getVertex("agency_C");
         Vertex stop_d = graph.getVertex("agency_D");
 
-        TraverseOptions options = new TraverseOptions(context);
+        RoutingRequest options = new RoutingRequest();
+        options.getModes().setWalk(false);
         options.getModes().setBicycle(true);
         options.getModes().setTransit(true);
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 18, 0, 0, 0);
+        options.setRoutingContext(graph, stop_a, stop_b);
 
         ShortestPathTree spt;
         GraphPath path;
+
         // route: bikes allowed, trip: no value
-        spt = AStar.getShortestPathTree(graph, stop_a, stop_b,  TestUtils.dateInSeconds(
-                2009, 8, 18, 0, 0, 0), options);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_b, false);
         assertNotNull(path);
 
         // route: bikes allowed, trip: bikes not allowed
-        spt = AStar.getShortestPathTree(graph, stop_d, stop_c,  TestUtils.dateInSeconds(
-                2009, 8, 18, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_d, stop_c);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_c, false);
         assertNull(path);
 
         // route: bikes not allowed, trip: bikes allowed
-        spt = AStar.getShortestPathTree(graph, stop_c, stop_d,  TestUtils.dateInSeconds(
-                2009, 8, 18, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_c, stop_d);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_d, false);
         assertNotNull(path);
@@ -413,25 +440,27 @@ public class TestPatternHopFactory extends TestCase {
 
         Vertex stop_d = graph.getVertex("agency_D");
         Vertex split_d = null;
-        for (StreetTransitLink e : filter(graph.getOutgoing(stop_d), StreetTransitLink.class)) {
+        for (StreetTransitLink e : filter(stop_d.getOutgoing(), StreetTransitLink.class)) {
             split_d = e.getToVertex();
         }
         
-        TraverseOptions options = new TraverseOptions(context);
+        RoutingRequest options = new RoutingRequest();
         options.wheelchairAccessible = true;
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 18, 0, 0, 0);
 
         ShortestPathTree spt;
         GraphPath path;
+
         // stop B is accessible, so there should be a path.
-        spt = AStar.getShortestPathTree(graph, near_a, near_b,  TestUtils.dateInSeconds(
-                2009, 8, 18, 0, 0, 0), options);
+        options.setRoutingContext(graph, near_a, near_b);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(near_b, false);
         assertNotNull(path);
 
         // stop C is not accessible, so there should be no path.
-        spt = AStar.getShortestPathTree(graph, near_a, near_c,  TestUtils.dateInSeconds(
-                2009, 8, 18, 0, 0, 0), options);
+        options.setRoutingContext(graph, near_a, near_c);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(near_c, false);
         assertNull(path);
@@ -439,8 +468,10 @@ public class TestPatternHopFactory extends TestCase {
         // from stop A to stop D would normally be trip 1.1 to trip 2.1, arriving at 00:30. But trip
         // 2 is not accessible, so we'll do 1.1 to 3.1, arriving at 01:00
         GregorianCalendar time = new GregorianCalendar(2009, 8, 18, 0, 0, 0);
-        spt = AStar.getShortestPathTree(graph, near_a, split_d,  TestUtils.toSeconds(time)
-               , options);
+        time.setTimeZone(TimeZone.getTimeZone("America/New_York"));
+        options.dateTime = TestUtils.toSeconds(time);
+        options.setRoutingContext(graph, near_a, split_d);
+        spt = aStar.getShortestPathTree(options);
         
         time.add(Calendar.HOUR, 1);
         time.add(Calendar.SECOND, 1); //for the StreetTransitLink
@@ -456,21 +487,22 @@ public class TestPatternHopFactory extends TestCase {
          *  from R to S.  If we take the direct-but-slower 11.1, we'll miss
          *  the 8:50 and have to catch the 9:50.
          */
-        
         Vertex destination = graph.getVertex("agency_T");
-        TraverseOptions wo = new TraverseOptions();
+        RoutingRequest options = new RoutingRequest();
         // test is designed such that transfers must be instantaneous
-        wo.minTransferTime = 0; 
-        wo.setGtfsContext(context);
+        options.minTransferTime = 0; 
         GregorianCalendar startTime = new GregorianCalendar(2009, 11, 2, 8, 30, 0);
-        ShortestPathTree spt = AStar.getShortestPathTree(graph, "agency_Q", destination.getLabel(),
-                TestUtils.toSeconds(startTime), wo);
+        startTime.setTimeZone(TimeZone.getTimeZone("America/New_York"));
+        options.dateTime = TestUtils.toSeconds(startTime);
+        options.setRoutingContext(graph, "agency_Q", destination.getLabel());
+        ShortestPathTree spt = aStar.getShortestPathTree(options);
         GraphPath path = spt.getPath(destination, false);
 
-        long endTime = path.getEndTime();
-        Calendar c = new GregorianCalendar();
-        c.setTimeInMillis(endTime);
-        assertTrue(endTime - startTime.getTimeInMillis() < 7200);
+        // TODO this is wrong (milliseconds)
+//        long endTime = path.getEndTime();
+//        Calendar c = new GregorianCalendar();
+//        c.setTimeInMillis(endTime);
+//        assertTrue(endTime - startTime.getTimeInMillis() < 7200);
     }
 
     public void testFrequencies() {
@@ -480,58 +512,82 @@ public class TestPatternHopFactory extends TestCase {
         ShortestPathTree spt;
         GraphPath path;
 
-        TraverseOptions options = new TraverseOptions(context);
+        RoutingRequest options = new RoutingRequest();
         options.setModes(new TraverseModeSet("TRANSIT"));
-
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 0, 0, 0);
+        options.setRoutingContext(graph, stop_u, stop_v);
+        
         // U to V - original stop times - shouldn't be used
-        spt = AStar.getShortestPathTree(graph, stop_u, stop_v,  
-                TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0), options);
+        spt = aStar.getShortestPathTree(options);
         path = spt.getPath(stop_v, false);
         assertNotNull(path);
         assertEquals(4, path.states.size());
-        long endTime = TestUtils.dateInSeconds(2009, 8, 7, 6, 40, 0);
+        long endTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 6, 40, 0);
         assertEquals(endTime, path.getEndTime());
 
         // U to V - first frequency
-        spt = AStar.getShortestPathTree(graph, stop_u.getLabel(), stop_v.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 7, 7, 0, 0), options);
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 7, 0, 0);
+        options.setRoutingContext(graph, stop_u, stop_v);
+        spt = aStar.getShortestPathTree(options);
         path = spt.getPath(stop_v, false);
         assertNotNull(path);
         assertEquals(4, path.states.size());
-        endTime = TestUtils.dateInSeconds(2009, 8, 7, 7, 40, 0);
+        endTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 7, 40, 0);
         assertEquals(endTime, path.getEndTime());
 
         // U to V - second frequency
-        spt = AStar.getShortestPathTree(graph, stop_u.getLabel(), stop_v.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 7, 14, 0, 0), options);
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 14, 0, 0);
+        options.setRoutingContext(graph, stop_u, stop_v);
+        spt = aStar.getShortestPathTree(options);
         path = spt.getPath(stop_v, false);
         assertNotNull(path);
         assertEquals(4, path.states.size());
-        endTime = TestUtils.dateInSeconds(2009, 8, 7, 14, 40, 0);
+        endTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 14, 40, 0);
         assertEquals(endTime, path.getEndTime());
+        
+        boolean boarded = false;
+        for (FrequencyBoard e : filter(stop_u.getOutgoing(), FrequencyBoard.class)) {
+            boarded = true;
+            FrequencyBoard board = (FrequencyBoard) e;
+            FrequencyBasedTripPattern pattern = board.getPattern();
+            int previousArrivalTime = pattern.getPreviousArrivalTime(0, 0, false, false, false);
+            assertTrue(previousArrivalTime < 0);
+            
+            previousArrivalTime = pattern.getPreviousArrivalTime(0, 60*60*7-1, false, false, false);
+            assertEquals(60*60*6, previousArrivalTime);
+            
+            previousArrivalTime = pattern.getPreviousArrivalTime(0, 60*60*11, false, false, false);
+            assertEquals(60*60*10, previousArrivalTime);
+            
+            previousArrivalTime = pattern.getPreviousArrivalTime(0, 60*60*18, false, false, false);
+            assertEquals(60*60*16, previousArrivalTime);
+        }
+        assertTrue(boarded);
+        
     }
     
     public void testFewestTransfers() {
         Vertex stop_c = graph.getVertex("agency_C");
         Vertex stop_d = graph.getVertex("agency_D");
-        TraverseOptions options = new TraverseOptions(context);
-        options.optimizeFor = OptimizeType.QUICK;
-        ShortestPathTree spt = AStar.getShortestPathTree(graph, stop_c.getLabel(), stop_d.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 1, 16, 0, 0), options);
+        RoutingRequest options = new RoutingRequest();
+        options.optimize = OptimizeType.QUICK;
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 1, 16, 0, 0);
+        options.setRoutingContext(graph, stop_c, stop_d);  
+                
+        ShortestPathTree spt = aStar.getShortestPathTree(options);
 
         //when optimizing for speed, take the fast two-bus path
         GraphPath path = spt.getPath(stop_d, false);
         assertNotNull(path);
-        assertEquals(TestUtils.dateInSeconds(2009, 8, 1, 16, 20, 0), path.getEndTime());
+        assertEquals(TestUtils.dateInSeconds("America/New_York", 2009, 8, 1, 16, 20, 0), path.getEndTime());
         
         //when optimizing for fewest transfers, take the slow one-bus path
         options.transferPenalty = 1800;
-        spt = AStar.getShortestPathTree(graph, stop_c.getLabel(), stop_d.getLabel(),  
-                TestUtils.dateInSeconds(2009, 8, 1, 16, 0, 0), options);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_d, false);
         assertNotNull(path);
-        assertEquals(TestUtils.dateInSeconds(2009, 8, 1, 16, 50, 0), path.getEndTime());
+        assertEquals(TestUtils.dateInSeconds("America/New_York", 2009, 8, 1, 16, 50, 0), path.getEndTime());
 
     }
 
@@ -542,12 +598,13 @@ public class TestPatternHopFactory extends TestCase {
         Vertex stop = graph.getVertex("agency_A");
         assertNotNull(stop);
 
-        TraverseOptions options = new TraverseOptions(context);
-        ShortestPathTree spt = AStar.getShortestPathTree(graph, entrance, stop,  
-                TestUtils.dateInSeconds(2009, 8, 1, 16, 0, 0), options);
+        RoutingRequest options = new RoutingRequest();
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 1, 16, 0, 0); 
+        options.setRoutingContext(graph, entrance, stop);
+        ShortestPathTree spt = aStar.getShortestPathTree(options);
         
         GraphPath path = spt.getPath(stop, false);
         assertNotNull(path);
-        assertEquals(TestUtils.dateInSeconds(2009, 8, 1, 16, 0, 34), path.getEndTime());
+        assertEquals(TestUtils.dateInSeconds("America/New_York", 2009, 8, 1, 16, 0, 34), path.getEndTime());
     }
 }

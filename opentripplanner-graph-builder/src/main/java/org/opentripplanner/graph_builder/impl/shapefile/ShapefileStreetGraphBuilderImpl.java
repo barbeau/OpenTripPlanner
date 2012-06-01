@@ -14,42 +14,43 @@
 package org.opentripplanner.graph_builder.impl.shapefile;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.TreeSet;
 
-import org.geotools.data.DefaultQuery;
 import org.geotools.data.FeatureSource;
+import org.geotools.data.Query;
 import org.geotools.factory.Hints;
 import org.geotools.feature.FeatureCollection;
+import org.geotools.feature.FeatureIterator;
 import org.geotools.geometry.jts.JTS;
 import org.geotools.referencing.ReferencingFactoryFinder;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.referencing.crs.CRSAuthorityFactory;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
+import org.opentripplanner.common.StreetUtils;
+import org.opentripplanner.common.geometry.GeometryUtils;
 import org.opentripplanner.common.model.P2;
 import org.opentripplanner.graph_builder.services.GraphBuilder;
-import org.opentripplanner.graph_builder.services.StreetUtils;
 import org.opentripplanner.graph_builder.services.shapefile.FeatureSourceFactory;
 import org.opentripplanner.graph_builder.services.shapefile.SimpleFeatureConverter;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.edgetype.EndpointVertex;
 import org.opentripplanner.routing.edgetype.PlainStreetEdge;
 import org.opentripplanner.routing.edgetype.StreetTraversalPermission;
+import org.opentripplanner.routing.graph.Graph;
 import org.opentripplanner.routing.patch.Alert;
+import org.opentripplanner.routing.vertextype.IntersectionVertex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Geometry;
-import com.vividsolutions.jts.geom.GeometryFactory;
 import com.vividsolutions.jts.geom.LineString;
 import com.vividsolutions.jts.geom.MultiLineString;
-import com.vividsolutions.jts.geom.PrecisionModel;
 
 /**
  * Loads a shapefile into an edge-based graph.
@@ -62,6 +63,14 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
 
     private ShapefileStreetSchema _schema;
 
+    public List<String> provides() {
+        return Arrays.asList("streets");
+    }
+
+    public List<String> getPrerequisites() {
+        return Collections.emptyList();
+    }
+    
     public void setFeatureSourceFactory(FeatureSourceFactory factory) {
         _featureSourceFactory = factory;
     }
@@ -71,7 +80,7 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
     }
 
     @Override
-    public void buildGraph(Graph graph) {
+    public void buildGraph(Graph graph, HashMap<Class<?>, Object> extra) {
 
         try {
 
@@ -85,7 +94,7 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
             CoordinateReferenceSystem worldCRS = factory
                     .createCoordinateReferenceSystem("EPSG:4326");
 
-            DefaultQuery query = new DefaultQuery();
+            Query query = new Query();
             query.setCoordinateSystem(sourceCRS);
             query.setCoordinateSystemReproject(worldCRS);
 
@@ -102,7 +111,8 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
                     .getPermissionConverter();
             SimpleFeatureConverter<String> noteConverter = _schema.getNoteConverter();
 
-            HashMap<Coordinate, Vertex> intersectionsByLocation = new HashMap<Coordinate, Vertex>();
+            HashMap<Coordinate, IntersectionVertex> intersectionsByLocation = 
+                    new HashMap<Coordinate, IntersectionVertex>();
 
             SimpleFeatureConverter<P2<Double>> safetyConverter = _schema.getBicycleSafetyConverter();
 
@@ -114,7 +124,7 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
             HashSet<Object> seen = new HashSet<Object>();
 
             List<SimpleFeature> featureList = new ArrayList<SimpleFeature>();
-            Iterator<SimpleFeature> it2 = features.iterator();
+            FeatureIterator<SimpleFeature> it2 = features.features();
             while (it2.hasNext()) {
                 SimpleFeature feature = it2.next();
                 if (featureSelector != null && ! featureSelector.convert(feature)) {
@@ -122,11 +132,15 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
                 }
                 featureList.add(feature);
             }
-            features.close(it2);
+            it2.close();
 
             HashMap<Coordinate, TreeSet<String>> coordinateToStreetNames = getCoordinatesToStreetNames(featureList);
             
             for (SimpleFeature feature : featureList) {
+                if (feature.getDefaultGeometry() == null) {
+                    log.warn("feature has no geometry: " + feature.getIdentifier());
+                    continue;
+                }
                 LineString geom = toLineString((Geometry) feature.getDefaultGeometry());
 
                 Object o = streetIdConverter.convert(feature);
@@ -138,6 +152,12 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
                 String name = streetNameConverter.convert(feature);
                 Coordinate[] coordinates = geom.getCoordinates();
 
+                if (coordinates.length < 2) {
+                    //not a real linestring
+                    log.warn("Bad geometry for street with id " + id + " name " + name);
+                    continue;
+                }
+                
                 // this rounding is a total hack, to work around
                 // http://jira.codehaus.org/browse/GEOT-2811
                 Coordinate startCoordinate = new Coordinate(
@@ -157,21 +177,17 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
                 String endIntersectionName = getIntersectionName(coordinateToStreetNames,
                         intersectionNameToId, endCoordinate);
 
-                Vertex startIntersection = intersectionsByLocation.get(startCoordinate);
+                IntersectionVertex startIntersection = intersectionsByLocation.get(startCoordinate);
                 if (startIntersection == null) {
-                    startIntersection = new EndpointVertex(startIntersectionName, startCoordinate.x,
+                    startIntersection = new IntersectionVertex(graph, startIntersectionName, startCoordinate.x,
                             startCoordinate.y, startIntersectionName);
-                    
-                    startIntersection = graph.addVertex(startIntersection);                  
-                    startIntersection = graph.addVertex(startIntersection);
                     intersectionsByLocation.put(startCoordinate, startIntersection);
                 }
 
-                Vertex endIntersection = intersectionsByLocation.get(endCoordinate);
+                IntersectionVertex endIntersection = intersectionsByLocation.get(endCoordinate);
                 if (endIntersection == null) {
-                    endIntersection = new EndpointVertex(endIntersectionName, endCoordinate.x,
+                    endIntersection = new IntersectionVertex(graph, endIntersectionName, endCoordinate.x,
                             endCoordinate.y, endIntersectionName);
-                    endIntersection = graph.addVertex(endIntersection);
                     intersectionsByLocation.put(endCoordinate, endIntersection);
                 }
 
@@ -184,12 +200,10 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
 
                 PlainStreetEdge street = new PlainStreetEdge(startIntersection, endIntersection, geom, name, length, permissions.getFirst(), false);
                 street.setId(id);
-                graph.addEdge(street);
 
                 LineString reversed = (LineString) geom.reverse();
                 PlainStreetEdge backStreet = new PlainStreetEdge(endIntersection, startIntersection, reversed, name, length, permissions.getSecond(), true);
                 backStreet.setId(id);
-                graph.addEdge(backStreet);
 
                 if (noteConverter != null) {
                 	String note = noteConverter.convert(feature);
@@ -214,11 +228,10 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
                 }
             }
 
-            /* prune floating islands and generate turns */
-            StreetUtils.pruneFloatingIslands(graph);
+            /* Generate turns */
             StreetUtils.makeEdgeBased(graph, intersectionsByLocation.values(), null);
 
-            features.close(it2);
+            it2.close();
 
         } catch (Exception ex) {
             throw new IllegalStateException("error loading shapefile street data", ex);
@@ -235,6 +248,10 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
         while (it.hasNext()) {
             SimpleFeature feature = it.next();
             if (featureSelector != null && !featureSelector.convert(feature)) {
+                continue;
+            }
+            if (feature.getDefaultGeometry() == null) {
+                log.warn("feature has no geometry: " + feature.getIdentifier());
                 continue;
             }
             LineString geom = toLineString((Geometry) feature.getDefaultGeometry());
@@ -302,12 +319,14 @@ public class ShapefileStreetGraphBuilderImpl implements GraphBuilder {
             MultiLineString ml = (MultiLineString) g;
 
             Coordinate[] coords = ml.getCoordinates();
-            GeometryFactory factory = new GeometryFactory(new PrecisionModel(
-                    PrecisionModel.FLOATING), 4326);
-            return factory.createLineString(coords);
+            return GeometryUtils.getGeometryFactory().createLineString(coords);
         } else {
             throw new RuntimeException("found a geometry feature that's not a linestring: " + g);
         }
     }
 
+    @Override
+    public void checkInputs() {
+        _featureSourceFactory.checkInputs();
+    }
 }

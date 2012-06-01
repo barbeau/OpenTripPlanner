@@ -26,7 +26,6 @@ otp.planner.PrintTripWin = null;
 otp.planner.TripTab = {
 
     // config
-    map           : null,
     ui            : null,
     locale        : null,
     templates     : null,
@@ -121,37 +120,45 @@ otp.planner.TripTab = {
         if(z.length > 0)
         {
             // step D++: add buttons to the tab 
-            var r = new Ext.Toolbar.Button({
-                text:    this.locale.buttons.reverse,
-                iconCls: 'reverse-button',
-                tooltip: this.locale.buttons.reverseTip,
-                scope:   this,
-                handler: this.reverseCB
-            });
+            var buttons = [];
 
-            var e = new Ext.Toolbar.Button({
-                text:    this.locale.buttons.edit,
-                iconCls: 'edit-button',
-                tooltip: this.locale.buttons.editTip,
-                scope:   this,
-                handler: this.editCB
-            });
+            if(this.planner.options.showReverseButton)
+            {
+                var r = new Ext.Toolbar.Button({
+                    text:    this.locale.buttons.reverse,
+                    iconCls: 'reverse-button',
+                    tooltip: this.locale.buttons.reverseTip,
+                    scope:   this,
+                    handler: this.reverseCB
+                });
+                buttons.push(r);
+            }
 
-            var buttons = [r, e];
+            if(this.planner.options.showEditButton)
+            {
+                var e = new Ext.Toolbar.Button({
+                    text:    this.locale.buttons.edit,
+                    iconCls: 'edit-button',
+                    tooltip: this.locale.buttons.editTip,
+                    scope:   this,
+                    handler: this.editCB
+                });
+                buttons.push(e);
+            }
 
-            if(this.showPrintButton)
+            if(this.planner.options.showPrintButton)
             {
                 var p = new Ext.Toolbar.Button({
                     text:    this.locale.buttons.print,
                     iconCls: 'print-button',
                     tooltip: this.locale.buttons.printTip,
-                    scope:   this,
-                    handler: this.printCB
+                    scope:   this.planner,
+                    handler: this.planner.printCB
                 });
                 buttons.push(p);
             }
 
-            if (this.showLinksButton)
+            if (this.planner.options.showLinksButton)
             {
                 var l = new Ext.Toolbar.Button({
                     text: this.locale.buttons.link,
@@ -190,6 +197,18 @@ otp.planner.TripTab = {
         }
 
         return this.isValid();
+    },
+
+    /** Show alternative routes - hover */
+    mouseOverItineraryFn : function(eventObject,elRef) {
+        var newItin = eventObject.getItinerary(elRef.id);
+        eventObject.renderer.drawItineraryAlternative(newItin);
+    },
+
+    /** Show alternative routes - clear  */
+    mouseOutItineraryFn : function(eventObject,elRef) {
+        var theItin = eventObject.getItinerary(elRef.id);
+        eventObject.renderer.clearAlternatives(theItin);
     },
 
     /** 
@@ -232,28 +251,6 @@ otp.planner.TripTab = {
 
         // make and show the link dialog
         this.linkDialog = otp.util.ExtUtils.makePopup({'html':html}, this.locale.buttons.link, true, 300, win_y, true, 100, 200);
-    },
-
-    /** */
-    printCB : function(b, e)
-    {
-        console.log("TripTab.print: close request object");
-        var req    = otp.clone(this.request);
-        req.url    = this.printUrl;
-
-        // get the itin
-        if(this.m_activeItinerary && this.m_activeItinerary.id)
-            req.itinID = this.m_activeItinerary.id;
-
-        var url    = this.templates.tripPrintTemplate.apply(req);
-        console.log("TripTab.print: url " + req.url);
-
-        console.log("TripTab.print: open window");
-        otp.planner.PrintTripWin = window.open(url,'WORKING','width=800,height=600,resizable=1,scrollbars=1,left=100,top=100,screenX=100,screenY=100');
-        console.log("TripTab.print: window focus");
-        otp.planner.PrintTripWin.focus();
-
-        otp.util.Analytics.gaEvent(otp.util.Analytics.OTP_TRIP_PRINT);
     },
 
     /** */
@@ -304,28 +301,47 @@ otp.planner.TripTab = {
         
         /* draw topographic map */
         
-        var hasBikeLeg = false;
+        var hasBikeWalkLeg = false;
         for(var i=0; i<this.m_activeItinerary.m_legStore.getTotalCount(); i++) {
-            if(this.m_activeItinerary.m_legStore.getAt(i).get("mode")=="BICYCLE") {
-                hasBikeLeg = true;
+            if(this.m_activeItinerary.m_legStore.getAt(i).get("mode")=="BICYCLE" ||
+               this.m_activeItinerary.m_legStore.getAt(i).get("mode")=="WALK") {
+                hasBikeWalkLeg = true;
                 break;
             }
         }
-        
-        if(hasBikeLeg){
-            this.ui.innerSouth.getEl().setHeight(180);
-            this.ui.innerSouth.show();
-            this.ui.viewport.doLayout();
-            this.topoRenderer.draw(this.m_activeItinerary, this.m_tripDetailsTree);
+
+        if(hasBikeWalkLeg && this.planner.options.showElevationGraph)
+        {
+            try
+            {
+                this.ui.innerSouth.getEl().setHeight(180);
+                this.ui.innerSouth.show();
+                this.ui.viewport.doLayout();
+                this.topoRenderer.draw(this.m_activeItinerary, this.m_tripDetailsTree);
+            }
+            catch(e)
+            {
+                this.ui.innerSouth.hide();
+                this.ui.viewport.doLayout();
+
+                console.log("EXCEPTION in topoRenderer.draw(): " + e);
+            }
         }
-        else if (this.ui.innerSouth.isVisible()) {
-            // not a bike trip but topo panel still visible from previous trip
-            this.ui.innerSouth.hide();
-            this.ui.viewport.doLayout();
-        }
-        
+
         this.renderer.draw(this.m_activeItinerary, this.m_tripDetailsTree);
         this.planner.controller.activate(this.CLASS_NAME);
+        
+        /* Show alternative routes */
+        /* ------------------------------------------------- */
+        var els = Ext.query('.dir-alt-route-inner');        
+        for (var i=0; i < els.length; i++) {
+        	var el = Ext.get(els[i]);
+        	el.removeAllListeners();
+        	el.on('mouseover', this.mouseOverItineraryFn.createCallback(this, el));
+        	el.on('mouseout', this.mouseOutItineraryFn.createCallback(this, el));
+        }
+        /* ------------------------------------------------- */
+
     },
 
     /**
@@ -358,7 +374,8 @@ otp.planner.TripTab = {
      *
      * @param {Object} id
      */
-    getItinerary : function(id) {
+    getItinerary : function(id)
+    {
         var retVal = null;
         if (id == null) {
             id = 1;
@@ -366,14 +383,15 @@ otp.planner.TripTab = {
 
         // try to get itinerary object from cache...if not there, create it
         var retVal = this.m_itineraryCache[id];
-        if (retVal == null) {
+        if (retVal == null)
+        {
             var itin = this.m_itinerariesStore.getAt(id - 1);
             retVal = new otp.planner.Itinerary( {
                 map              : this.planner.map,
+                triptab          : this,
                 locale           : this.locale,
                 templates        : this.templates,
-                showStopIds      : this.planner.showStopIds,
-                useRouteLongName : this.planner.useRouteLongName,
+                planner          : this.planner,
                 xml              : itin,
                 from             : this.m_from,
                 to               : this.m_to,
@@ -391,6 +409,11 @@ otp.planner.TripTab = {
     getId : function() 
     {
         return this.id;
+    },
+
+    /** Return the title of this tab */
+    getTitle : function () {
+        return this.m_title;
     },
 
     /** */

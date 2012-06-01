@@ -14,77 +14,196 @@
 package org.opentripplanner.routing.transit_index;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 
+import org.onebusaway.gtfs.model.Agency;
 import org.onebusaway.gtfs.model.AgencyAndId;
-import org.opentripplanner.routing.core.Edge;
+import org.onebusaway.gtfs.model.ServiceCalendar;
+import org.onebusaway.gtfs.model.ServiceCalendarDate;
+import org.onebusaway.gtfs.model.Trip;
 import org.opentripplanner.routing.core.TraverseMode;
+import org.opentripplanner.routing.edgetype.PatternBoard;
+import org.opentripplanner.routing.edgetype.PreAlightEdge;
+import org.opentripplanner.routing.edgetype.PreBoardEdge;
+import org.opentripplanner.routing.graph.Edge;
 import org.opentripplanner.routing.services.TransitIndexService;
+import org.opentripplanner.util.MapUtils;
 
-public class TransitIndexServiceImpl implements TransitIndexService,
-		Serializable {
-	private static final long serialVersionUID = -8147894489513820239L;
+import com.vividsolutions.jts.geom.Coordinate;
 
-	private HashMap<AgencyAndId, List<RouteVariant>> variantsByRoute;
-	private HashMap<AgencyAndId, RouteVariant> variantsByTrip;
+public class TransitIndexServiceImpl implements TransitIndexService, Serializable {
+    private static final long serialVersionUID = -8147894489513820239L;
 
-	private HashMap<AgencyAndId, Edge> preAlightEdges;
+    private HashMap<String, List<RouteVariant>> variantsByAgency;
 
-	private HashMap<AgencyAndId, Edge> preBoardEdges;
+    private HashMap<AgencyAndId, List<RouteVariant>> variantsByRoute;
 
-	private HashMap<AgencyAndId,HashSet<String>> directionsForRoute;
+    private HashMap<AgencyAndId, RouteVariant> variantsByTrip;
 
-	private List<TraverseMode> modes;
+    private HashMap<AgencyAndId, PreAlightEdge> preAlightEdges;
 
-	public TransitIndexServiceImpl(
-			HashMap<AgencyAndId, List<RouteVariant>> variantsByRoute,
-			HashMap<AgencyAndId, RouteVariant> variantsByTrip,
-			HashMap<AgencyAndId, Edge> preBoardEdges,
-			HashMap<AgencyAndId, Edge> preAlightEdges,
-			HashMap<AgencyAndId, HashSet<String>> directionsByRoute,
-			List<TraverseMode> modes) {
-		this.variantsByRoute = variantsByRoute;
-		this.variantsByTrip = variantsByTrip;
-		this.preBoardEdges = preBoardEdges;
-		this.preAlightEdges = preAlightEdges;
-		this.directionsForRoute = directionsByRoute;
-		this.modes = modes;
-	}
+    private HashMap<AgencyAndId, PreBoardEdge> preBoardEdges;
 
-	public List<RouteVariant> getVariantsForRoute(AgencyAndId route) {
-		List<RouteVariant> variants = variantsByRoute.get(route);
-		if (variants == null) {
-		    return Collections.emptyList();
-		}
-		return variants;
-	}
+    private HashMap<AgencyAndId, HashSet<String>> directionsForRoute;
 
-	public RouteVariant getVariantForTrip(AgencyAndId trip) {
-		return variantsByTrip.get(trip);
-	}
+    private List<TraverseMode> modes;
 
-	@Override
-	public Edge getPrealightEdge(AgencyAndId stop) {
-		return preAlightEdges.get(stop);
-	}
+    private HashMap<String, List<ServiceCalendar>> calendarsByAgency = new HashMap<String, List<ServiceCalendar>>();
+    private HashMap<String, List<ServiceCalendarDate>> calendarDatesByAgency = new HashMap<String, List<ServiceCalendarDate>>();
 
-	@Override
-	public Edge getPreboardEdge(AgencyAndId stop) {
-		return preBoardEdges.get(stop);
-	}
+    private HashMap<String, Agency> agencies = new HashMap<String, Agency>();
 
-	@Override
-	public Collection<String> getDirectionsForRoute(AgencyAndId route) {
-		return directionsForRoute.get(route);
-	}
+    private Coordinate center;
 
-	@Override
-	public List<TraverseMode> getAllModes() {
-		return modes;
-	}
+    public TransitIndexServiceImpl(HashMap<String, List<RouteVariant>> variantsByAgency,
+            HashMap<AgencyAndId, List<RouteVariant>> variantsByRoute,
+            HashMap<AgencyAndId, RouteVariant> variantsByTrip,
+            HashMap<AgencyAndId, PreBoardEdge> preBoardEdges,
+            HashMap<AgencyAndId, PreAlightEdge> preAlightEdges,
+            HashMap<AgencyAndId, HashSet<String>> directionsByRoute, List<TraverseMode> modes) {
+        this.variantsByAgency = variantsByAgency;
+        this.variantsByRoute = variantsByRoute;
+        this.variantsByTrip = variantsByTrip;
+        this.preBoardEdges = preBoardEdges;
+        this.preAlightEdges = preAlightEdges;
+        this.directionsForRoute = directionsByRoute;
+        this.modes = modes;
+    }
 
+    public void merge(HashMap<String, List<RouteVariant>> variantsByAgency,
+            HashMap<AgencyAndId, List<RouteVariant>> variantsByRoute,
+            HashMap<AgencyAndId, RouteVariant> variantsByTrip,
+            HashMap<AgencyAndId, PreBoardEdge> preBoardEdges,
+            HashMap<AgencyAndId, PreAlightEdge> preAlightEdges,
+            HashMap<AgencyAndId, HashSet<String>> directionsByRoute, List<TraverseMode> modes) {
+
+        MapUtils.mergeIn(this.variantsByAgency, variantsByAgency);
+        MapUtils.mergeIn(this.variantsByRoute, variantsByRoute);
+        this.variantsByTrip.putAll(variantsByTrip);
+        this.preBoardEdges.putAll(preBoardEdges);
+        this.preAlightEdges.putAll(preAlightEdges);
+        MapUtils.mergeIn(this.directionsForRoute, directionsByRoute);
+        for (TraverseMode mode : modes) {
+            if (!this.modes.contains(mode)) {
+                this.modes.add(mode);
+            }
+        }
+    }
+
+    @Override
+    public List<RouteVariant> getVariantsForAgency(String agency) {
+        List<RouteVariant> variants = variantsByAgency.get(agency);
+        if (variants == null) {
+            return Collections.emptyList();
+        }
+        return variants;
+    }
+
+    @Override
+    public List<RouteVariant> getVariantsForRoute(AgencyAndId route) {
+        List<RouteVariant> variants = variantsByRoute.get(route);
+        if (variants == null) {
+            return Collections.emptyList();
+        }
+        return variants;
+    }
+
+    @Override
+    public RouteVariant getVariantForTrip(AgencyAndId trip) {
+        return variantsByTrip.get(trip);
+    }
+
+    @Override
+    public PreAlightEdge getPreAlightEdge(AgencyAndId stop) {
+        return preAlightEdges.get(stop);
+    }
+
+    @Override
+    public PreBoardEdge getPreBoardEdge(AgencyAndId stop) {
+        return preBoardEdges.get(stop);
+    }
+
+    @Override
+    public Collection<String> getDirectionsForRoute(AgencyAndId route) {
+        return directionsForRoute.get(route);
+    }
+
+    @Override
+    public List<TraverseMode> getAllModes() {
+        return modes;
+    }
+
+    @Override
+    public List<String> getAllAgencies() {
+        return new ArrayList<String>(variantsByAgency.keySet());
+    }
+
+    @Override
+    public Collection<AgencyAndId> getAllRouteIds() {
+        return variantsByRoute.keySet();
+    }
+
+    @Override
+    public void addCalendars(Collection<ServiceCalendar> allCalendars) {
+        for (ServiceCalendar calendar : allCalendars) {
+            MapUtils.addToMapList(calendarsByAgency, calendar.getServiceId().getAgencyId(), calendar);
+        }
+    }
+
+    @Override
+    public void addCalendarDates(Collection<ServiceCalendarDate> allDates) {
+        for (ServiceCalendarDate date : allDates) {
+            MapUtils.addToMapList(calendarDatesByAgency, date.getServiceId().getAgencyId(), date);
+        }
+    }
+
+    @Override
+    public List<ServiceCalendarDate> getCalendarDatesByAgency(String agency) {
+        return calendarDatesByAgency.get(agency);
+    }
+
+    @Override
+    public List<ServiceCalendar> getCalendarsByAgency(String agency) {
+        return calendarsByAgency.get(agency);
+    }
+
+    @Override
+    public Agency getAgency(String id) {
+        return agencies.get(id);
+    }
+
+    public void addAgency(Agency agency) {
+        agencies.put(agency.getId(), agency);
+    }
+
+    @Override
+    public List<AgencyAndId> getRoutesForStop(AgencyAndId stop) {
+        HashSet<AgencyAndId> out = new HashSet<AgencyAndId>();
+        Edge edge = preBoardEdges.get(stop);
+        for (Edge e: edge.getToVertex().getOutgoing()) {
+            if (e instanceof PatternBoard) {
+                PatternBoard board = (PatternBoard) e;
+                for (Trip t : board.getPattern().getTrips()) {
+                    out.add(t.getRoute().getId());
+                }
+            }
+            
+        }
+        return new ArrayList<AgencyAndId>(Arrays.asList(out.toArray(new AgencyAndId[0])));
+    }
+
+    public void setCenter(Coordinate coord) {
+        this.center = coord;
+    }
+
+    @Override
+    public Coordinate getCenter() {
+        return center;
+    }
 }

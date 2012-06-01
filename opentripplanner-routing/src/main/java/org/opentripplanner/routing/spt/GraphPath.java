@@ -15,27 +15,26 @@ package org.opentripplanner.routing.spt;
 
 import java.util.LinkedList;
 import java.util.List;
-import java.util.logging.Logger;
 
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.Trip;
 import org.opentripplanner.gtfs.GtfsLibrary;
-import org.opentripplanner.routing.core.Edge;
 import org.opentripplanner.routing.core.EdgeNarrative;
 import org.opentripplanner.routing.core.MutableEdgeNarrative;
 import org.opentripplanner.routing.core.RouteSpec;
+import org.opentripplanner.routing.core.RoutingContext;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.edgetype.Board;
-import org.opentripplanner.routing.edgetype.PatternBoard;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Vertex;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A shortest path on the graph.
  */
 public class GraphPath {
-    private static final Logger LOGGER = Logger.getLogger(GraphPath.class.getCanonicalName());
+    private static final Logger LOG = LoggerFactory.getLogger(GraphPath.class);
 
     public LinkedList<State> states;
 
@@ -46,7 +45,8 @@ public class GraphPath {
 
     private double walkDistance = 0;
 
-    private TraverseOptions options;
+    // don't really need to save this (available through State) but why not
+    private RoutingContext rctx;
 
     /**
      * Construct a GraphPath based on the given state by following back-edge fields all the way back
@@ -64,9 +64,9 @@ public class GraphPath {
      *            - the traverse options used to reach this state
      */
     public GraphPath(State s, boolean optimize) {
-        this.options = s.getOptions();
-        this.back = options.isArriveBy();
-
+        this.rctx = s.getContext();
+        this.back = s.getOptions().isArriveBy();
+        
         /* Put path in chronological order, and optimize as necessary */
         State lastState;
         walkDistance = s.getWalkDistance();
@@ -125,13 +125,8 @@ public class GraphPath {
     public List<RouteSpec> getRouteSpecs() {
         List<RouteSpec> ret = new LinkedList<RouteSpec>();
         for (State s : states) {
-            Edge e = s.getBackEdge();
-            Trip trip = null;
-            if (e instanceof PatternBoard) {
-                trip = ((PatternBoard) e).getPattern().getTrip(s.getTrip());
-            } else if (e instanceof Board) {
-                trip = ((Board) e).getTrip();
-            }
+            EdgeNarrative e = s.getBackEdgeNarrative();
+            Trip trip = e.getTrip();
             if ( trip != null) {
                 String routeName = GtfsLibrary.getRouteName(trip.getRoute());
                 RouteSpec spec = new RouteSpec(trip.getId().getAgencyId(), routeName);
@@ -150,16 +145,11 @@ public class GraphPath {
     public List<AgencyAndId> getTrips() {
         List<AgencyAndId> ret = new LinkedList<AgencyAndId>();
         for (State s : states) {
-            Edge e = s.getBackEdge();
-            Trip trip = null;
-            if (e instanceof PatternBoard) {
-                trip  = ((PatternBoard) e).getPattern().getTrip(s.getTrip());
-            } else if (e instanceof Board) {
-                trip = ((Board) e).getTrip();
-            } else {
-                continue;
-            }
-                        ret.add(trip.getId());
+            EdgeNarrative e = s.getBackEdgeNarrative();
+            if (e == null) continue;
+            Trip trip = e.getTrip();
+            if (trip != null)
+                ret.add(trip.getId());
         }
         return ret;
     }
@@ -204,6 +194,8 @@ public class GraphPath {
             editor.setFromState(orig);
             editor.incrementTimeInSeconds(orig.getAbsTimeDeltaSec());
             editor.incrementWeight(orig.getWeightDelta());
+            if (orig.isBikeRenting() != orig.getBackState().isBikeRenting())
+            	editor.setBikeRenting(!orig.isBikeRenting());
             ret  = editor.makeState();
             orig = orig.getBackState();
         }
@@ -236,7 +228,7 @@ public class GraphPath {
                 orig = orig.getBackState();
             }
         } catch (NullPointerException e) {
-            LOGGER.warning("Cannot reverse path at edge: " + edge
+            LOG.warn("Cannot reverse path at edge: " + edge
                     + " returning unoptimized path.  If edge is a PatternInterlineDwell,"
                     + " this is not totally unexpected; otherwise, you might want to"
                     + " look into it");
@@ -268,8 +260,20 @@ public class GraphPath {
         System.out.println(" --- END GRAPHPATH DUMP ---");
     }
 
+    public void dumpPathParser() {
+        System.out.println(" --- BEGIN GRAPHPATH DUMP ---");
+        System.out.println(this.toString());
+        for (State s : states) 
+            System.out.println(s.getPathParserStates() + s + " via " + s.getBackEdge());
+        System.out.println(" --- END GRAPHPATH DUMP ---");
+    }
+
     public double getWalkDistance() {
         return walkDistance;
+    }
+    
+    public RoutingContext getRoutingContext() {
+        return rctx;
     }
 
 }

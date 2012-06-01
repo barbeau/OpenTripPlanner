@@ -13,12 +13,12 @@
 
 package org.opentripplanner.routing.edgetype;
 
-import org.opentripplanner.routing.core.AbstractEdge;
 import org.opentripplanner.routing.core.EdgeNarrative;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.graph.AbstractEdge;
+import org.opentripplanner.routing.graph.Vertex;
 
 import com.vividsolutions.jts.geom.Geometry;
 
@@ -47,7 +47,7 @@ public class TimedTransferEdge extends AbstractEdge {
 
     @Override
     public State traverse(State s0) {
-        EdgeNarrative en = new FixedModeEdge(this, s0.getOptions().getModes().getNonTransitMode());
+        EdgeNarrative en = new FixedModeEdge(this, s0.getNonTransitMode(s0.getOptions()));
         StateEditor s1 = s0.edit(this, en);
         s1.incrementWeight(1);
         return s1.makeState();
@@ -71,14 +71,6 @@ public class TimedTransferEdge extends AbstractEdge {
     @Override
     public String getName() {
         return null;
-    }
-
-    public boolean equals(Object o) {
-        if (o instanceof TimedTransferEdge) {
-            TimedTransferEdge other = (TimedTransferEdge) o;
-            return other.getFromVertex().equals(fromv) && other.getToVertex().equals(tov);
-        }
-        return false;
     }
 
     public String toString() {

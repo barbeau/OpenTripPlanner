@@ -38,6 +38,11 @@ try
     OpenLayers.IMAGE_RELOAD_ATTEMPTS = 5;
     OpenLayers.Util.onImageLoadErrorColor = "";
     OpenLayers.ImgPath = "images/map/controls/";
+
+    otp.util.WGS_SRS = "EPSG:4326";
+    otp.util.GEOGRAPHIC   = new OpenLayers.Projection(otp.util.WGS_SRS);
+    otp.util.WEB_MERC_SRS = "EPSG:900913";
+    otp.util.WEB_MERCATOR = new OpenLayers.Projection(otp.util.WEB_MERC_SRS);
 } 
 catch (e) 
 {
@@ -70,6 +75,7 @@ otp.util.OpenLayersUtils = {
             },
             options
         );
+        layer.OTP_LAYER = true;
         map.addLayer(layer);
 
         return layer;
@@ -78,7 +84,7 @@ otp.util.OpenLayersUtils = {
     /**
      * static routine that adds controls to a map 
      */
-    defaultControls : function(map, doZoomWheel, doRightClicks, doPermaLink, doAttribution, doHistory)
+    defaultControls : function(map, doZoomWheel, doRightClicks, doPermaLink, doAttribution, doHistory, doLayerSwitch)
     {
         var retVal = {
             pan   : new OpenLayers.Control.PanZoomBar({zoomWorldIcon:true}),
@@ -113,6 +119,13 @@ otp.util.OpenLayersUtils = {
             var h = new OpenLayers.Control.NavigationHistory();
             retVal.hist = h;
             map.addControl(h);
+        }
+
+        if(doLayerSwitch)
+        {
+            var s = new OpenLayers.Control.LayerSwitcher();
+            retVal.layerSwitch = s;
+            map.addControl(s);
         }
 
         return retVal;
@@ -303,6 +316,18 @@ otp.util.OpenLayersUtils = {
         }
     },
 
+    /**
+     * static routine that adds controls to a map 
+     */
+    makePoint : function(x, y, reproject)
+    {
+        var ll = new OpenLayers.Geometry.Point(x, y)
+        if(reproject)
+            ll = ll.transform(otp.util.GEOGRAPHIC, otp.util.WEB_MERCATOR);
+
+        return ll;
+    },
+
     ///////////// MARKER UTILS ///////////// MARKER UTILS ///////////// MARKER UTILS ///////////// MARKER UTILS /////////////
 
     RTE_ICON_SIZE   : new OpenLayers.Size(105, 34),
@@ -338,7 +363,7 @@ otp.util.OpenLayersUtils = {
     getMarkerStyle: function() {
         var template = {
             externalGraphic: "${getExternalGraphic}",
-            graphicOpacity: 0.92
+            graphicOpacity: 1
         };
         var graphicMapping = this.markerGraphicMapping;
         var olutils = this;

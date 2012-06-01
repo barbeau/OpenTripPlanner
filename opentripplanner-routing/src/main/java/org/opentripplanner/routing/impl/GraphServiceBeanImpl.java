@@ -13,15 +13,16 @@
 
 package org.opentripplanner.routing.impl;
 
-import org.onebusaway.gtfs.services.calendar.CalendarService;
-import org.opentripplanner.routing.contraction.ContractionHierarchySet;
-import org.opentripplanner.routing.core.Graph;
+import java.util.Arrays;
+import java.util.List;
+
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Graph.LoadLevel;
 import org.opentripplanner.routing.services.GraphService;
 
 /**
  * This simple implementation of {@link GraphService} is mostly useful for testing
  * 
- * @author bdferris
  * @see GraphServiceImpl
  * @see GraphService
  */
@@ -29,14 +30,10 @@ public class GraphServiceBeanImpl implements GraphService {
 
     private Graph graph;
 
-    private ContractionHierarchySet contractionHierarchySet;
-
-    private CalendarService calendarService;
-
+    // 0-arg bean constructor
     public GraphServiceBeanImpl() {
-
     }
-
+    
     public GraphServiceBeanImpl(Graph graph) {
         this.graph = graph;
     }
@@ -45,20 +42,12 @@ public class GraphServiceBeanImpl implements GraphService {
         this.graph = graph;
     }
 
-    public void setContractionHierarchySet(ContractionHierarchySet contractionHierarchySet) {
-        this.contractionHierarchySet = contractionHierarchySet;
-    }
-
-    public void setCalendarService(CalendarService calendarService) {
-        this.calendarService = calendarService;
-    }
-
     /****
      * {@link GraphService} Interface
      ****/
 
     @Override
-    public void refreshGraph() {
+    public void refreshGraphs() {
 
     }
 
@@ -68,12 +57,17 @@ public class GraphServiceBeanImpl implements GraphService {
     }
 
     @Override
-    public ContractionHierarchySet getContractionHierarchySet() {
-        return contractionHierarchySet;
+    public void setLoadLevel(LoadLevel level) {
+
     }
 
     @Override
-    public CalendarService getCalendarService() {
-        return calendarService;
+    public Graph getGraph(String routerId) {
+        return graph;
+    }
+
+    @Override
+    public List<String> getGraphIds() {
+        return Arrays.asList("default");
     }
 }

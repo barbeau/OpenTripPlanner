@@ -16,14 +16,15 @@ package org.opentripplanner.routing.edgetype;
 import junit.framework.TestCase;
 
 import org.opentripplanner.common.geometry.PackedCoordinateSequence;
-import org.opentripplanner.routing.core.GenericVertex;
 import org.opentripplanner.routing.core.OptimizeType;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.util.ElevationUtils;
 import org.opentripplanner.routing.util.SlopeCosts;
+import org.opentripplanner.routing.vertextype.IntersectionVertex;
+import org.opentripplanner.routing.vertextype.StreetVertex;
 
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.GeometryFactory;
@@ -35,8 +36,8 @@ public class TestTriangle extends TestCase {
         Coordinate c1 = new Coordinate(-122.575033, 45.456773);
         Coordinate c2 = new Coordinate(-122.576668, 45.451426);
 
-        Vertex v1 = new GenericVertex("v1", c1, null);
-        Vertex v2 = new GenericVertex("v2", c2, null);
+        StreetVertex v1 = new IntersectionVertex(null, "v1", c1, null);
+        StreetVertex v2 = new IntersectionVertex(null, "v2", c2, null);
 
         GeometryFactory factory = new GeometryFactory();
         LineString geometry = factory.createLineString(new Coordinate[] { c1, c2 });
@@ -53,16 +54,16 @@ public class TestTriangle extends TestCase {
                 new Coordinate(length, 0) // slope = -0.1
         };
         PackedCoordinateSequence elev = new PackedCoordinateSequence.Double(profile);
-        testStreet.setElevationProfile(elev);
+        testStreet.setElevationProfile(elev, false);
         
         double trueLength = ElevationUtils.getLengthMultiplierFromElevation(elev) * length;
         testStreet.setSlopeSpeedEffectiveLength(trueLength); // normalize length
         
-        SlopeCosts costs = ElevationUtils.getSlopeCosts(elev, "test");
+        SlopeCosts costs = ElevationUtils.getSlopeCosts(elev, true);
         
-        TraverseOptions options = new TraverseOptions(TraverseMode.BICYCLE);
-        options.optimizeFor = OptimizeType.TRIANGLE;
-        options.speed = 6.0;
+        RoutingRequest options = new RoutingRequest(TraverseMode.BICYCLE);
+        options.optimize = OptimizeType.TRIANGLE;
+        options.setBikeSpeed(6.0);
         options.walkReluctance = 1;
 
         options.setTriangleSafetyFactor(0);
@@ -72,7 +73,7 @@ public class TestTriangle extends TestCase {
 
         State result = testStreet.traverse(startState);
         double timeWeight = result.getWeight();
-        double expectedSpeedWeight = trueLength / options.speed;
+        double expectedSpeedWeight = trueLength / options.getSpeed(TraverseMode.BICYCLE);
 		assertEquals(expectedSpeedWeight, timeWeight);
 
         options.setTriangleSafetyFactor(0);
@@ -81,8 +82,8 @@ public class TestTriangle extends TestCase {
         startState = new State(v1, options);
         result = testStreet.traverse(startState);
         double slopeWeight = result.getWeight();
-        assertTrue(length * 1.5 / options.speed < slopeWeight);
-        assertTrue(length * 1.5 * 10 / options.speed > slopeWeight);
+        assertTrue(length * 1.5 / options.getSpeed(TraverseMode.BICYCLE) < slopeWeight);
+        assertTrue(length * 1.5 * 10 / options.getSpeed(TraverseMode.BICYCLE) > slopeWeight);
 
         options.setTriangleSafetyFactor(1);
         options.setTriangleSlopeFactor(0);
@@ -91,9 +92,8 @@ public class TestTriangle extends TestCase {
         result = testStreet.traverse(startState);
         double safetyWeight = result.getWeight();
         double slopeSafety = costs.slopeSafetyCost;
-        double expectedSafetyWeight = (trueLength * 0.74 + slopeSafety) / options.speed;
-        expectedSafetyWeight = expectedSafetyWeight * 0.2 + timeWeight * 0.8;
-        assertEquals(expectedSafetyWeight, safetyWeight);
+        double expectedSafetyWeight = (trueLength * 0.74 + slopeSafety) / options.getSpeed(TraverseMode.BICYCLE);
+        assertTrue(expectedSafetyWeight - safetyWeight < 0.00001);
 
         final double ONE_THIRD = 1/3.0;
         options.setTriangleSafetyFactor(ONE_THIRD);

@@ -13,40 +13,36 @@
 
 package org.opentripplanner.routing.contraction;
 
-import java.io.Serializable;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
 import org.onebusaway.gtfs.model.Trip;
-import org.opentripplanner.routing.core.DirectEdge;
-import org.opentripplanner.routing.core.Edge;
+import org.opentripplanner.common.geometry.GeometryUtils;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.AbstractEdge;
 import org.opentripplanner.routing.patch.Alert;
 import org.opentripplanner.routing.patch.Patch;
 
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Geometry;
-import com.vividsolutions.jts.geom.GeometryFactory;
 
-public class Shortcut implements DirectEdge, Serializable {
+public class Shortcut extends AbstractEdge {
     private static final long serialVersionUID = -5813252201367498850L;
     
-    Vertex startVertex, endVertex;
-    
-    DirectEdge edge1;
-    DirectEdge edge2;
+    Edge edge1;
+    Edge edge2;
     int time;
     double weight = -1;
     private TraverseMode mode;
-	private double walkDistance;
-   
-    public Shortcut(DirectEdge edge1, DirectEdge edge2, int time, double weight, double walkDistance, TraverseMode mode) {
-        this.startVertex = edge1.getFromVertex();
-        this.endVertex = edge2.getToVertex();
+    private double walkDistance;
+
+    public Shortcut(Edge edge1, Edge edge2, int time, double weight, double walkDistance, TraverseMode mode) {
+        super(edge1.getFromVertex(), edge2.getToVertex());
         this.edge1 = edge1;
         this.edge2 = edge2;
         this.time = time;
@@ -62,8 +58,7 @@ public class Shortcut implements DirectEdge, Serializable {
 
     @Override
     public Geometry getGeometry() {
-        GeometryFactory gf = new GeometryFactory();
-        return gf.createLineString(new Coordinate[] { getFromVertex().getCoordinate(), getToVertex().getCoordinate() });
+        return GeometryUtils.getGeometryFactory().createLineString(new Coordinate[] { getFromVertex().getCoordinate(), getToVertex().getCoordinate() });
     }
 
     @Override
@@ -116,16 +111,6 @@ public class Shortcut implements DirectEdge, Serializable {
     }
 
     @Override
-    public Vertex getFromVertex() {
-        return startVertex;
-    }
-
-    @Override
-    public Vertex getToVertex() {
-        return endVertex;
-    }
-
-    @Override
     public boolean isRoundabout() {
         return false;
     }
@@ -146,7 +131,7 @@ public class Shortcut implements DirectEdge, Serializable {
 
 	@Override
 	public List<Patch> getPatches() {
-		return null;
+        return Collections.emptyList();
 	}
 
 	@Override
@@ -190,12 +175,12 @@ public class Shortcut implements DirectEdge, Serializable {
 	}
 
 	@Override
-	public double timeLowerBound(TraverseOptions options) {
+	public double timeLowerBound(RoutingRequest options) {
 		return weight == -1 ? 0 : weight;
 	}
 
     @Override
-    public double weightLowerBound(TraverseOptions options) {
+    public double weightLowerBound(RoutingRequest options) {
         return timeLowerBound(options);
     }
 }

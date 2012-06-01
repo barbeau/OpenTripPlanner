@@ -27,6 +27,104 @@ otp.util.ObjUtils = {
     m_fixNameSpacing       : true,
     m_capitolize           : true,
 
+    /**
+     * predicate to check if string looks like a lat,lon string
+     */
+    isCoordinate : function(value) {
+        var lat, lon;
+
+        try
+        {
+            lat = parseFloat(otp.util.ObjUtils.getLat(value));
+            lon = parseFloat(otp.util.ObjUtils.getLon(value));
+        }
+        catch(e)
+        {
+        }
+
+        return !isNaN(lat) && !isNaN(lon);
+    },
+
+    isNumber : function(value)
+    {
+        var retVal = false;
+        try
+        {
+            if(value)
+                retVal = !isNaN(value - 111);
+        }
+        catch(e)
+        {
+        }
+
+        return retVal; 
+    },
+
+
+    /** returns the second value from a comma separated string eg: 0.0,0.returnMe*/
+    getLon : function(coord) {
+        var retVal = null;
+
+        try
+        {
+            retVal = coord.substring(coord.indexOf(',') + 1); 
+        }
+        catch(e)
+        {
+        }
+
+        return retVal;
+    },
+
+    /** returns the first value from a comma separated string eg: 0.returnMe,0.0 */
+    getLat : function(coord) {
+        var retVal = null;
+
+        try
+        {
+            retVal = coord.substring(0, coord.indexOf(',')); 
+        }
+        catch(e)
+        {
+        }
+
+        return retVal;
+    },
+
+    /**  */
+    getConfig : function(config)
+    {
+        var retVal = otp.config;
+        if(config != null && config.map != null)
+            retVal = config;
+        return retVal;
+    },
+
+    /** string & sub-string search of an array (slightly different than array.indexOf) */
+    isInArray : function (str, array)
+    {
+        var retVal = false;
+        try
+        {
+            for(var i = 0; i < array.length; i++)
+            {
+                var m = array[i];
+                if(str.indexOf(m) >= 0 )
+                {
+                    retVal = true;
+                    break;
+                }
+            }
+        }
+        catch(e)
+        {
+            console.log("isInArray error" + e);
+        }
+
+        return retVal;
+     },
+
+
     /** */
     isArray : function (obj)
     {
@@ -163,7 +261,6 @@ otp.util.ObjUtils = {
         return retVal;
     },
 
-
     /** */
     getCoordinate : function(coord, defVal)
     {
@@ -175,7 +272,7 @@ otp.util.ObjUtils = {
             var c = coord.split(",");
             var X = c[0].trim();
             var Y = c[1].trim();
-            if(X >= 0.0 && X < 100000000.0 && Y >= 0.0 && Y < 100000000.0)
+            if(X >= -180.0 && X < 100000000.0 && Y >= -180.0 && Y < 100000000.0)
                 retVal = X + "," + Y;
         }
         catch(e)
@@ -185,7 +282,7 @@ otp.util.ObjUtils = {
 
         return retVal;
     },
-    
+
     /** will fix a name/value pair, by appending the name to a returned value
      *  see the m_ member variable settings above for rules
      */
@@ -243,6 +340,36 @@ otp.util.ObjUtils = {
 
         return retVal;
     },
+
+    /** return a <name>::<coord> from an object with .name, .x, .y, .lat and .lon elements */
+    getNamedCoordRecord : function(data, isMercator)
+    {
+        var retVal = {};
+
+        var X='x'; var Y='y';
+        retVal.zoom = 6;
+        retVal.isMercator = isMercator;
+        if(isMercator)
+        {
+            X='lon';
+            Y='lat';
+            retVal.zoom = 15;
+        }
+
+        // handle the <name>:: part of the coord
+        retVal.coord = '';
+        if(data['name'] && data['name'].length > 0)
+            retVal.coord =  data['name'] + '::';
+        retVal.name = data['name'] || '';
+
+        // do the X,Y part of the named coord
+        retVal.x = data[X]
+        retVal.y = data[Y], 
+        retVal.coord += retVal.x + "," + retVal.y;
+
+        return retVal;
+    },
+
 
     /** gets the number of properties */
     numProperties : function(feature, defVal) 

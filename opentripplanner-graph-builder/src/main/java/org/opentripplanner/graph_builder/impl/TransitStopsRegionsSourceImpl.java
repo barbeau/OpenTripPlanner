@@ -16,12 +16,10 @@ package org.opentripplanner.graph_builder.impl;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.opentripplanner.graph_builder.services.RegionsSource;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.core.TransitStop;
-import org.opentripplanner.routing.services.GraphService;
+import org.opentripplanner.graph_builder.GraphBuilderTask;
+import org.opentripplanner.openstreetmap.services.RegionsSource;
+import org.opentripplanner.routing.graph.Vertex;
+import org.opentripplanner.routing.vertextype.TransitStop;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,14 +37,8 @@ public class TransitStopsRegionsSourceImpl implements RegionsSource {
     private static final double METERS_PER_DEGREE_LAT = 111111;
     private double distance = 2000;
     
-    private GraphService _graphService;
-
-    @Autowired
-    public void setGraphService(GraphService graphService) {
-        _graphService = graphService;
-    }
-
-
+    @Autowired GraphBuilderTask task;
+    
     public void setDistance(double distance) {
         this.distance = distance;
     }
@@ -54,14 +46,11 @@ public class TransitStopsRegionsSourceImpl implements RegionsSource {
     @Override
     public Iterable<Envelope> getRegions() {
 
-    	Graph graph = _graphService.getGraph();
-        
     	List<Envelope> regions = new ArrayList<Envelope>();
 
-        for (GraphVertex gv : graph.getVertices()) {
-            Vertex vertex = gv.vertex;
-            if (vertex instanceof TransitStop) {
-                Coordinate c = vertex.getCoordinate();
+        for (Vertex gv : task.getGraph().getVertices()) {
+            if (gv instanceof TransitStop) {
+                Coordinate c = gv.getCoordinate();
                 Envelope env = new Envelope(c);
                 double meters_per_degree_lon_here =  
                     METERS_PER_DEGREE_LAT * Math.cos(Math.toRadians(c.y));

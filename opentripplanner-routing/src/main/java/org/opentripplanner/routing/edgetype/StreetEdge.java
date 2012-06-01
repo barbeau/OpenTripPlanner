@@ -12,14 +12,31 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 
 package org.opentripplanner.routing.edgetype;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.AbstractEdge;
+import org.opentripplanner.routing.vertextype.StreetVertex;
 
-import org.opentripplanner.routing.core.DirectEdge;
-import org.opentripplanner.routing.core.TraverseOptions;
+/**
+ *  Abstract base class for edges in the (open)streetmap layer 
+ *  (might be paths, stairs, etc. as well as streets).  This
+ *  can be used as a marker to detect edges in the street layer.
+ */
 
-/** Interface for edges representing streets */
-public interface StreetEdge extends EdgeWithElevation, DirectEdge {
-    public boolean canTraverse(TraverseOptions options);
-    public double getLength();
-    public StreetTraversalPermission getPermission();
-	public boolean isNoThruTraffic();
+/* package-private ? */ 
+public abstract class StreetEdge extends AbstractEdge implements EdgeWithElevation {
+    
+    private static final long serialVersionUID = 1L;
+
+    public StreetEdge(StreetVertex v1, StreetVertex v2) {
+        super(v1, v2);
+    }
+    
+    public abstract boolean canTraverse(RoutingRequest options);
+    
+    public abstract double getLength();
+    
+    public abstract StreetTraversalPermission getPermission();
+    
+    public abstract boolean isNoThruTraffic();
+    
 }

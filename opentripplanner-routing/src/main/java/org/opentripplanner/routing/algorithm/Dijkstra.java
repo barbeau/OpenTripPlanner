@@ -13,15 +13,16 @@
 
 package org.opentripplanner.routing.algorithm;
 
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.Set;
 
+import org.opentripplanner.common.pqueue.BinHeap;
 import org.opentripplanner.routing.contraction.ContractionHierarchy;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
 import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.pqueue.BinHeap;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.spt.BasicShortestPathTree;
 
 /**
@@ -32,20 +33,18 @@ public class Dijkstra {
     Vertex taboo;
     private BasicShortestPathTree spt;
     private BinHeap<State> queue;
-    private HashSet<Vertex> targets = null; // why was this a set of String not Vertex?
-    
+    private HashSet<Vertex> targets = null; 
     private int hopLimit;
-    private Graph graph;
+    Set<Vertex> routeOn;
     
-    public Dijkstra(Graph graph, Vertex origin, TraverseOptions options, Vertex taboo) {
-        this(graph, origin, options, taboo, Integer.MAX_VALUE);
+    public Dijkstra(Vertex origin, RoutingRequest options, Vertex taboo) {
+        this(origin, options, taboo, Integer.MAX_VALUE);
     }
     /**
      * 
      * @param taboo Do not consider any paths passing through this vertex
      */
-    public Dijkstra(Graph graph, Vertex origin, TraverseOptions options, Vertex taboo, int hopLimit) {
-        this.graph = graph;
+    public Dijkstra(Vertex origin, RoutingRequest options, Vertex taboo, int hopLimit) {
         this.taboo = taboo;
         this.hopLimit = hopLimit;
 
@@ -58,10 +57,9 @@ public class Dijkstra {
          * 
          * A good guess would be: ceiling(graph.averageDegree) ** hoplimit
          */
-        spt = new BasicShortestPathTree(50);
+        spt = new BasicShortestPathTree(options);
         queue = new BinHeap<State>(50);
         // Never init time to 0 since traverseBack will give times less than 0
-        // which in certain cases can trigger
         State init = new State(origin, options);
         spt.add(init);
         queue.insert(init, init.getWeight());
@@ -80,8 +78,7 @@ public class Dijkstra {
     public BasicShortestPathTree getShortestPathTree(Vertex target, double weightLimit) {
         
         while (!queue.empty()) { 
-            
-        	State su = queue.extract_min(); 
+            State su = queue.extract_min(); 
             if ( ! spt.visit(su)) 
             	continue;
             
@@ -92,7 +89,7 @@ public class Dijkstra {
             if (u == target)
                 break;
 
-            Iterable<Edge> outgoing = graph.getOutgoing(u);
+            Iterable<Edge> outgoing = u.getOutgoing();
             for (Edge edge : outgoing) {
             	State sv = edge.traverse(su);
                 if (sv != null
@@ -101,7 +98,6 @@ public class Dijkstra {
                 	&& spt.add(sv))
                         queue.insert(sv, sv.getWeight());
             }
-            
         }
         return spt;
     }
@@ -111,13 +107,10 @@ public class Dijkstra {
     @SuppressWarnings("unchecked")
 	public BasicShortestPathTree getShortestPathTree(double weightLimit, int nodeLimit) {
         
-//        if (targets != null) {
-//            targets.remove(origin);
-//        }
-    	// clone targets since they will be checked off destructively
-    	HashSet<String> remainingTargets = null;
+        // clone targets since they will be checked off destructively
+    	HashSet<Vertex> remainingTargets = null;
     	if (targets != null)
-    		remainingTargets = (HashSet<String>) targets.clone();
+    		remainingTargets = (HashSet<Vertex>) targets.clone();
 
         while (!queue.empty()) {
             
@@ -137,16 +130,12 @@ public class Dijkstra {
                 	break;
             }
             
-            Iterable<Edge> outgoing = graph.getOutgoing(u);
+            Iterable<Edge> outgoing = u.getOutgoing();
             for (Edge edge : outgoing) {
-//                if (!(edge instanceof TurnEdge || edge instanceof FreeEdge || edge instanceof Shortcut || edge instanceof PlainStreetEdge)) {
-//                    //only consider street edges when contracting
-//                    // use isContractable() ?
-//                    continue;
-//                }
-            	if ( ! (ContractionHierarchy.isContractable(edge)))
-            		continue;
-            	
+
+                if (routeOn != null && ! routeOn.contains(edge.getToVertex()))
+                    continue;
+
                 State sv = edge.traverse(su);
                 
                 if (sv != null
@@ -156,7 +145,6 @@ public class Dijkstra {
                 	&& !sv.exceedsWeightLimit(weightLimit))
                         queue.insert(sv, sv.getWeight());
             }
-
         }
         return spt;
     }
@@ -164,4 +152,16 @@ public class Dijkstra {
     public void setTargets(HashSet<Vertex> targets) {
         this.targets = targets;
     }
+    
+    public void setRouteOn(Set<Vertex> routeOn) {
+        this.routeOn = routeOn;
+    }
+
+    public void setTargets(Collection<State> targets) {
+        this.targets = new HashSet<Vertex>(targets.size());
+        for (State s : targets) {
+            this.targets.add(s.getVertex());
+        }
+    }
+
 }

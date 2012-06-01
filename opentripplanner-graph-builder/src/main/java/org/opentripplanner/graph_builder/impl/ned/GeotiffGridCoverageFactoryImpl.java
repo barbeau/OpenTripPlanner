@@ -20,6 +20,7 @@ import org.geotools.coverage.grid.GridCoverage2D;
 import org.geotools.gce.geotiff.GeoTiffFormat;
 import org.geotools.gce.geotiff.GeoTiffReader;
 import org.opentripplanner.graph_builder.services.ned.NEDGridCoverageFactory;
+import org.opentripplanner.routing.graph.Graph;
 
 /**
  * Implementation of NEDGridCoverageFactory for Geotiff data (one of the default NED formats).
@@ -61,6 +62,18 @@ public class GeotiffGridCoverageFactoryImpl implements NEDGridCoverageFactory {
         }
 
         return coverage;
+    }
+
+    @Override
+    public void checkInputs() {
+        if (!path.canRead()) {
+            throw new RuntimeException("Can't read NED path: " + path);
+        }
+    }
+
+    @Override
+    public void setGraph(Graph graph) {
+        //nothing to do here
     }
 
 }

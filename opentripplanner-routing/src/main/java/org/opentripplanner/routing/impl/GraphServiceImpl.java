@@ -13,163 +13,141 @@
 
 package org.opentripplanner.routing.impl;
 
-import java.io.File;
-import java.util.Collections;
-import java.util.List;
-
+import java.util.Collection;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 import javax.annotation.PostConstruct;
-
-import org.onebusaway.gtfs.impl.calendar.CalendarServiceImpl;
-import org.onebusaway.gtfs.model.calendar.CalendarServiceData;
-import org.onebusaway.gtfs.services.calendar.CalendarService;
-import org.opentripplanner.model.GraphBundle;
-import org.opentripplanner.routing.contraction.ContractionHierarchySet;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.services.GraphRefreshListener;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Graph.LoadLevel;
 import org.opentripplanner.routing.services.GraphService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ResourceLoaderAware;
+import org.springframework.context.annotation.Scope;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 
-/**
- * Implementation of {@link GraphService} that loads the graph from a file.
- * 
- * You can specify the location of the graph in a number of ways:
- * 
- * 1) Call {@link #setBundle(GraphBundle)} to set the graph bundle location
- * 
- * 2) Call {@link #setGraphPath(File)} to set the graph file path directly
- * 
- * 3) Call {@link #setContractionHierarchySet(ContractionHierarchySet)} to
- * specify the graph itself.
- * 
- * @author bdferris
- * @see GraphService
- */
-public class GraphServiceImpl implements GraphService {
+@Scope("singleton")
+public class GraphServiceImpl implements GraphService, ResourceLoaderAware {
 
-  private static final Logger _log = LoggerFactory.getLogger(GraphServiceImpl.class);
-	
-  private GraphBundle _bundle;
+    private static final Logger LOG = LoggerFactory.getLogger(GraphServiceImpl.class);
 
-  private File _graphPath;
+    private String resourcePattern;
 
-  private boolean _createEmptyGraphIfNotFound = false;
+    private Map<String, Graph> graphs = new HashMap<String, Graph>();
 
-  private ContractionHierarchySet _contractionHierarchySet;
+    private LoadLevel loadLevel = LoadLevel.FULL;
+    
+    private String defaultRouterId = "";
+    
+    private ResourceLoader resourceLoader;
 
-  private CalendarServiceImpl _calendarService;
+    private boolean preloadGraphs = true;
 
-  private List<GraphRefreshListener> _graphRefreshListeners;
-
-  public void setBundle(GraphBundle bundle) {
-    _bundle = bundle;
-  }
-
-  public void setGraphPath(File graphPath) {
-    _graphPath = graphPath;
-  }
-
-  /**
-   * By default, we throw an exception if the graph path is not found. Set this
-   * to true to indicate that a default empty graph should be creaetd instead.
-   * 
-   * @param createEmptyGraphIfNotFound
-   */
-  public void setCreateEmptyGraphIfNotFound(boolean createEmptyGraphIfNotFound) {
-    _createEmptyGraphIfNotFound = createEmptyGraphIfNotFound;
-  }
-
-  public void setContractionHierarchySet(
-      ContractionHierarchySet contractionHierarchySet) {
-    _contractionHierarchySet = contractionHierarchySet;
-
-    CalendarServiceData data = _contractionHierarchySet.getService(CalendarServiceData.class);
-    if (data != null) {
-      CalendarServiceImpl calendarService = new CalendarServiceImpl();
-      calendarService.setData(data);
-      _calendarService = calendarService;
-    } else {
-      _calendarService = null;
-    }
-  }
-
-  @Autowired
-  public void setGraphRefreshListeners(
-      List<GraphRefreshListener> graphRefreshListeners) {
-    _graphRefreshListeners = graphRefreshListeners;
-  }
-
-  /****
-   * {@link GraphService} Interface
-   ****/
-
-  @Override
-  @PostConstruct
-  // This means it will run on startup
-  public void refreshGraph() {
-    readGraph();
-    notifyListeners();
-  }
-
-  @Override
-  public ContractionHierarchySet getContractionHierarchySet() {
-    return _contractionHierarchySet;
-  }
-
-  @Override
-  public Graph getGraph() {
-    return _contractionHierarchySet.getGraph();
-  }
-
-  @Override
-  public CalendarService getCalendarService() {
-    return _calendarService;
-  }
-
-  /****
-   * Private Methods
-   ****/
-
-  private void readGraph() {
-
-    File path = null;
-
-    if (_bundle != null)
-      path = _bundle.getGraphPath();
-
-    if (_graphPath != null)
-      path = _graphPath;
-
-    if (path == null || !path.exists()) {
-      if (!_createEmptyGraphIfNotFound) {
-    	  _log.error("Graph not found. Verify path to stored graph: " + path);
-    	  throw new IllegalStateException("graph path not found: " + path);
-      }
-
-      /****
-       * Create an empty graph if not graph is found
-       */
-      Graph graph = new Graph();
-      List<TraverseOptions> modeList = Collections.emptyList();
-      setContractionHierarchySet(new ContractionHierarchySet(graph, modeList));
-      return;
+    public void setPath(String path) {
+        this.resourcePattern = "file:".concat(path);
     }
 
-    try {
-      ContractionHierarchySet chs = ContractionHierarchySerializationLibrary.readGraph(path);
-      setContractionHierarchySet(chs);
-    } catch (Exception ex) {
-      throw new IllegalStateException("error loading graph from " + path, ex);
-    }
-  }
+	/**
+	 * This property allows loading a graph from the classpath or a path
+	 * relative to the webapp root, which can be useful in cloud computing
+	 * environments where webapps must be entirely self-contained. If it is
+	 * present, the placeholder {} will be replaced with the router ID. In
+	 * normal client-server operation, the ResourceLoader provided by Spring
+	 * will be a ServletContextResourceLoader, so the path will be interpreted
+	 * relative to the webapp root, and WARs should be handled transparently. If
+	 * you want to point to a path outside the webapp, or you want to be clear
+	 * about exactly where the resource is to be found, it should be prefixed
+	 * with 'classpath:','file:', or 'url:'.
+	 */
+	public void setResource(String resource) {
+		this.resourcePattern = resource;
+	}
 
-  private void notifyListeners() {
-    if( _graphRefreshListeners == null)
-      return;
-    for( GraphRefreshListener listener : _graphRefreshListeners)
-      listener.handleGraphRefresh(this);
-  }
+    @Override
+    public void refreshGraphs() {
+        //////////////////
+    }
+
+    @PostConstruct // This means it will run on startup
+    public void preloadGraphs() {
+    	if (preloadGraphs) {
+    		getGraph(null); // pre-load the default graph
+    	}
+    }
+
+    @Override
+    public Graph getGraph() {
+        return getGraph(null);
+    }
+
+    @Override
+    public synchronized Graph getGraph(String routerId) {
+    	if (routerId == null || routerId.isEmpty()) {
+    		routerId = defaultRouterId;    		
+    		LOG.debug("routerId not specified, set to default of '{}'", routerId);
+    	}
+        Graph graph;
+        String resourceName;
+        if (routerId.indexOf("../") != -1) {
+            LOG.warn("attempt to navigate up the directory hierarchy using a routerId");
+            return null;
+        } else {
+            resourceName = resourcePattern.replace("{}", routerId);
+        }
+        LOG.debug("graph for routerId '{}' is at {}", routerId, resourceName);
+        graph = graphs.get(resourceName);
+        if (graph == null) {
+            LOG.debug("this graph was not yet loaded");
+            InputStream is;
+            try {
+                Resource resource = resourceLoader.getResource(resourceName.concat("/Graph.obj"));
+                is = resource.getInputStream();
+            } catch (Exception e) {
+                LOG.warn("graph file not found or not openable at {}", resourceName);
+                if (routerId.equals(defaultRouterId)) {
+                    LOG.warn("graph for default routerId {} does not exist or cannot be opened at {}",
+                             routerId, resourceName);
+                    e.printStackTrace();
+                    return null;
+                }
+                return getGraph(null); // fall back on default if graph does not exist
+            }
+            try {
+            	graph = Graph.load(is, loadLevel);
+            	// key on resource name instead of routerId so fallbacks to defaultRouterId will all yield the same Graph
+                graphs.put(resourceName, graph);
+            } catch (Exception ex) {
+                LOG.error("Exception while loading graph from {}.", resourceName);
+                throw new RuntimeException("error loading graph from " + resourceName, ex);
+            }
+        } else {
+            LOG.debug("returning cached graph {} for routerId '{}'", graph, routerId);
+        }
+        return graph;
+    }
+
+    @Override
+    public void setLoadLevel(LoadLevel level) {
+        if (level != loadLevel) {
+            loadLevel = level;
+            refreshGraphs();
+        }
+    }
+
+    public void setDefaultRouterId(String routerId) {
+    	this.defaultRouterId = routerId;
+    }
+
+    @Override
+    public Collection<String> getGraphIds() {
+        return graphs.keySet();
+    }
+
+	@Override
+	public void setResourceLoader(ResourceLoader rl) {
+		this.resourceLoader = rl;
+	}
 
 }

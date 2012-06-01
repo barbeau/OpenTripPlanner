@@ -1,7 +1,23 @@
+/* This program is free software: you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public License
+ as published by the Free Software Foundation, either version 3 of
+ the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>. */
+
 package org.opentripplanner.routing.util;
 
+import java.util.LinkedList;
+import java.util.List;
+
 import org.opentripplanner.common.geometry.PackedCoordinateSequence;
-import org.opentripplanner.routing.edgetype.StreetVertex;
+import org.opentripplanner.routing.vertextype.TurnVertex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,7 +25,7 @@ import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.CoordinateSequence;
 
 public class ElevationUtils {
-    private static Logger log = LoggerFactory.getLogger(StreetVertex.class);
+    private static Logger log = LoggerFactory.getLogger(TurnVertex.class);
 
     /*
      * These numbers disagree with everything else I (David Turner) have read about the energy cost
@@ -40,9 +56,16 @@ public class ElevationUtils {
         return trueLength / flatLength;
     }
 
-    public static SlopeCosts getSlopeCosts(PackedCoordinateSequence elev, String name) {
+    /** 
+     * 
+     * @param elev The elevatioon profile, where each (x, y) is (distance along edge, elevation)
+     * @param slopeLimit Whether the slope should be limited to 0.35, which is the max slope for
+     * streets that take cars.
+     * @return
+     */
+    public static SlopeCosts getSlopeCosts(PackedCoordinateSequence elev, boolean slopeLimit) {
         Coordinate[] coordinates = elev.toCoordinateArray();
-
+        boolean flattened = false;
         double maxSlope = 0;
         double slopeSpeedEffectiveLength = 0;
         double slopeWorkCost = 0;
@@ -54,13 +77,16 @@ public class ElevationUtils {
                 continue;
             }
             double slope = rise / run;
-            if (slope > 0.35 || slope < -0.35) {
-                slope = 0; // Baldwin St in Dunedin, NZ, is the steepest street
-                           // on earth, and has a
-                // grade of 35%. So, this must be a data error.
-                log.warn("Warning: street "
-                        + name
-                        + " steeper than Baldwin Street.  This is an error in the algorithm or the data");
+            // Baldwin St in Dunedin, NZ, is the steepest street
+            // on earth, and has a grade of 35%.  So for streets
+            // which allow cars, we set the limit to 35%.  Footpaths
+            // are sometimes steeper, so we turn slopeLimit off for them.
+            // But we still need some sort of limit, because the energy
+            // usage approximation breaks down at extreme slopes, and
+            // gives negative weights
+            if ((slopeLimit && (slope > 0.35 || slope < -0.35)) || slope > 1.0 || slope < -1.0) {
+                slope = 0; 
+                flattened = true;
             }
             if (maxSlope < Math.abs(slope)) {
                 maxSlope = Math.abs(slope);
@@ -80,8 +106,27 @@ public class ElevationUtils {
                 slopeSafetyCost += safetyCost;
             }
         }
-        return new SlopeCosts(slopeSpeedEffectiveLength, slopeWorkCost, slopeSafetyCost, maxSlope);
+        return new SlopeCosts(slopeSpeedEffectiveLength, slopeWorkCost, slopeSafetyCost, maxSlope, flattened);
     }
+
+    /** constants for slope computation */
+    final static double tx[] = { 0.0000000000000000E+00, 0.0000000000000000E+00, 0.0000000000000000E+00,
+            2.7987785324442748E+03, 5.0000000000000000E+03, 5.0000000000000000E+03,
+            5.0000000000000000E+03 };
+    final static double ty[] = { -3.4999999999999998E-01, -3.4999999999999998E-01, -3.4999999999999998E-01,
+            -7.2695627831828688E-02, -2.4945814335295903E-03, 5.3500304527448035E-02,
+            1.2191105175593375E-01, 3.4999999999999998E-01, 3.4999999999999998E-01,
+            3.4999999999999998E-01 };
+    final static double coeff[] = { 4.3843513168660255E+00, 3.6904323727375652E+00, 1.6791850199667697E+00,
+            5.5077866957024113E-01, 1.7977766419113900E-01, 8.0906832222762959E-02,
+            6.0239305785343762E-02, 4.6782343053423814E+00, 3.9250580214736304E+00,
+            1.7924585866601270E+00, 5.3426170441723031E-01, 1.8787442260720733E-01,
+            7.4706427576152687E-02, 6.2201805553147201E-02, 5.3131908923568787E+00,
+            4.4703901299120750E+00, 2.0085381385545351E+00, 5.4611063530784010E-01,
+            1.8034042959223889E-01, 8.1456939988273691E-02, 5.9806795955995307E-02,
+            5.6384893192212662E+00, 4.7732222200176633E+00, 2.1021485412233019E+00,
+            5.7862890496126462E-01, 1.6358571778476885E-01, 9.4846184210137130E-02,
+            5.5464612133430242E-02 };
 
     public static double slopeSpeedCoefficient(double slope, double altitude) {
         /*
@@ -89,23 +134,7 @@ public class ElevationUtils {
          * http://www.analyticcycling.com/ForcesSpeed_Page.html fixme: should clamp to local speed
          * limits (code is from ZunZun)
          */
-        double tx[] = { 0.0000000000000000E+00, 0.0000000000000000E+00, 0.0000000000000000E+00,
-                2.7987785324442748E+03, 5.0000000000000000E+03, 5.0000000000000000E+03,
-                5.0000000000000000E+03 };
-        double ty[] = { -3.4999999999999998E-01, -3.4999999999999998E-01, -3.4999999999999998E-01,
-                -7.2695627831828688E-02, -2.4945814335295903E-03, 5.3500304527448035E-02,
-                1.2191105175593375E-01, 3.4999999999999998E-01, 3.4999999999999998E-01,
-                3.4999999999999998E-01 };
-        double coeff[] = { 4.3843513168660255E+00, 3.6904323727375652E+00, 1.6791850199667697E+00,
-                5.5077866957024113E-01, 1.7977766419113900E-01, 8.0906832222762959E-02,
-                6.0239305785343762E-02, 4.6782343053423814E+00, 3.9250580214736304E+00,
-                1.7924585866601270E+00, 5.3426170441723031E-01, 1.8787442260720733E-01,
-                7.4706427576152687E-02, 6.2201805553147201E-02, 5.3131908923568787E+00,
-                4.4703901299120750E+00, 2.0085381385545351E+00, 5.4611063530784010E-01,
-                1.8034042959223889E-01, 8.1456939988273691E-02, 5.9806795955995307E-02,
-                5.6384893192212662E+00, 4.7732222200176633E+00, 2.1021485412233019E+00,
-                5.7862890496126462E-01, 1.6358571778476885E-01, 9.4846184210137130E-02,
-                5.5464612133430242E-02 };
+
         int nx = 7;
         int ny = 10;
         int kx = 2;
@@ -208,6 +237,81 @@ public class ElevationUtils {
         }
 
         return temp;
+    }
+
+    public static PackedCoordinateSequence getPartialElevationProfile(
+            PackedCoordinateSequence elevationProfile, double start, double end) {
+        if (elevationProfile == null) {
+            return null;
+        }
+        List<Coordinate> coordList = new LinkedList<Coordinate>();
+
+        if (start < 0)
+            start = 0;
+
+        Coordinate[] coordinateArray = elevationProfile.toCoordinateArray();
+        double length = coordinateArray[coordinateArray.length - 1].x;
+        if (end > length)
+            end = length;
+
+        boolean started = false;
+        boolean finished = false;
+        Coordinate lastCoord = null;
+        for (Coordinate coord : coordinateArray) {
+            if (coord.x >= start && coord.x <= end) {
+                coordList.add(new Coordinate(coord.x - start, coord.y));
+                if (!started) {
+                    started = true;
+                    if (lastCoord == null) {
+                       //no need to interpolate as this is the first coordinate
+                        continue;
+                    }
+                    // interpolate start coordinate 
+                    double run = coord.x - lastCoord.x;
+                    if (run < 1) {
+                        //tiny runs are likely to lead to errors, so we'll skip them
+                        continue;
+                    }
+                    double p = (coord.x - start) / run;
+                    double rise = coord.y - lastCoord.y;
+                    Coordinate interpolatedStartCoordinate = new Coordinate(0, lastCoord.y + p * rise);
+                    coordList.add(0, interpolatedStartCoordinate);
+                }
+            } else if (coord.x > end && !finished && started && lastCoord != null) {
+                finished = true;
+                // interpolate end coordinate
+                double run = coord.x - lastCoord.x;
+                if (run < 1) {
+                    //tiny runs are likely to lead to errors, so we'll skip them
+                    continue;
+                }
+                double p = (end - lastCoord.x) / run;
+                double rise = coord.y - lastCoord.y;
+                Coordinate interpolatedEndCoordinate = new Coordinate(end, lastCoord.y + p * rise);
+                coordList.add(interpolatedEndCoordinate);
+            }
+            lastCoord = coord;
+        }
+
+        Coordinate coordArr[] = new Coordinate[coordList.size()];
+        return new PackedCoordinateSequence.Float(coordList.toArray(coordArr), 2);
+    }
+    
+    /** checks for units (m/ft) in an OSM ele tag value, and returns the value in meters */
+    public static Double parseEleTag(String ele) {
+        ele = ele.toLowerCase();
+        double unit = 1;
+        if (ele.endsWith("m")) {
+            ele = ele.replaceFirst("\\s*m", "");
+        } else if (ele.endsWith("ft")) {
+            ele = ele.replaceFirst("\\s*ft", "");
+            unit = 0.3048;
+        }
+        try {
+            return Double.parseDouble(ele) * unit;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
 }

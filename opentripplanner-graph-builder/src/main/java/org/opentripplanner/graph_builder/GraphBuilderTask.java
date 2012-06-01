@@ -14,40 +14,37 @@
 package org.opentripplanner.graph_builder;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 import org.opentripplanner.graph_builder.services.GraphBuilder;
-import org.opentripplanner.model.GraphBundle;
 import org.opentripplanner.routing.contraction.ContractionHierarchySet;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.impl.ContractionHierarchySerializationLibrary;
-import org.opentripplanner.routing.services.GraphService;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Graph.LoadLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 
 public class GraphBuilderTask implements Runnable {
     
-    private static Logger _log = LoggerFactory.getLogger(GraphBuilderTask.class); 
-
-    private GraphService _graphService;
+    private static Logger LOG = LoggerFactory.getLogger(GraphBuilderTask.class); 
 
     private List<GraphBuilder> _graphBuilders = new ArrayList<GraphBuilder>();
 
-    private GraphBundle _graphBundle;
+    private File graphFile;
     
     private boolean _alwaysRebuild = true;
 
-    private List<TraverseOptions> _modeList;
+    private List<RoutingRequest> _modeList;
 
     private double _contractionFactor = 1.0;
-
-    @Autowired
-    public void setGraphService(GraphService graphService) {
-        _graphService = graphService;
-    }
+    
+    private String _baseGraph = null;
+    
+    private Graph graph = new Graph();
     
     public void addGraphBuilder(GraphBuilder loader) {
         _graphBuilders.add(loader);
@@ -57,51 +54,96 @@ public class GraphBuilderTask implements Runnable {
         _graphBuilders = graphLoaders;
     }
 
-    public void setGraphBundle(GraphBundle graphBundle) {
-        _graphBundle = graphBundle;
-    }
-    
     public void setAlwaysRebuild(boolean alwaysRebuild) {
         _alwaysRebuild = alwaysRebuild;
     }
     
-    public void addMode(TraverseOptions mo) {
+    public void setBaseGraph(String baseGraph) {
+        this._baseGraph = baseGraph;
+        try {
+            graph = Graph.load(new File(baseGraph), LoadLevel.FULL);
+        } catch (Exception e) {
+            throw new RuntimeException("error loading base graph");
+        }
+    }
+
+    public void addMode(RoutingRequest mo) {
         _modeList.add(mo);
     }
 
-    public void setModes(List<TraverseOptions> modeList) {
+    public void setModes(List<RoutingRequest> modeList) {
         _modeList = modeList;
     }
 
     public void setContractionFactor(double contractionFactor) {
         _contractionFactor = contractionFactor;
     }
+    
+    public void setPath (String path) {
+        graphFile = new File(path.concat("/Graph.obj"));
+    }
+    
+    public Graph getGraph() {
+        return this.graph;
+    }
 
     public void run() {
         
-        Graph graph = _graphService.getGraph();
-        
-        if (_graphBundle == null) {
-            throw new RuntimeException("graphBuilderTask has no attribute graphBundle.");
+        if (graphFile == null) {
+            throw new RuntimeException("graphBuilderTask has no attribute graphFile.");
         }
-        File graphPath = _graphBundle.getGraphPath();
-        
-        if( graphPath.exists() && ! _alwaysRebuild) {
-            _log.info("graph already exists and alwaysRebuild=false => skipping graph build");
+
+        if( graphFile.exists() && ! _alwaysRebuild) {
+            LOG.info("graph already exists and alwaysRebuild=false => skipping graph build");
             return;
         }
-        
-        for (GraphBuilder load : _graphBuilders)
-            load.buildGraph(graph);
-        
-        ContractionHierarchySet chs = new ContractionHierarchySet(graph, _modeList, _contractionFactor);
-        chs.build();
+
         try {
-            ContractionHierarchySerializationLibrary.writeGraph(chs, graphPath);
+            if (!graphFile.getParentFile().exists())
+                if (!graphFile.getParentFile().mkdirs())
+                    LOG.error("Failed to create directories for graph bundle at " + graphFile);
+            graphFile.createNewFile();
+        } catch (IOException e) {
+            throw new RuntimeException("Cannot create or overwrite graph at path " + graphFile);
+        }
+
+        //check prerequisites
+        ArrayList<String> provided = new ArrayList<String>();
+        boolean bad = false;
+        for (GraphBuilder builder : _graphBuilders) {
+            List<String> prerequisites = builder.getPrerequisites();
+            for (String prereq : prerequisites) {
+                if (!provided.contains(prereq)) {
+                    LOG.error("Graph builder " + builder + " requires " + prereq + " but no previous stages provide it");
+                    bad = true;
+                }
+            }
+            provided.addAll(builder.provides());
+        }
+        if (_baseGraph != null)
+            LOG.warn("base graph loaded, not enforcing prerequisites");
+        else if (bad)
+            throw new RuntimeException("Prerequisites unsatisfied");
+
+        //check inputs
+        for (GraphBuilder builder : _graphBuilders) {
+            builder.checkInputs();
+        }
+
+        HashMap<Class<?>, Object> extra = new HashMap<Class<?>, Object>();
+        for (GraphBuilder load : _graphBuilders)
+            load.buildGraph(graph, extra);
+        
+        if (_modeList != null) {
+            ContractionHierarchySet chs = new ContractionHierarchySet(graph, _modeList, _contractionFactor);
+            chs.build();
+            graph.setHierarchies(chs);
+        }
+        GraphBuilderAnnotation.logSummary(graph.getBuilderAnnotations());
+        try {
+            graph.save(graphFile);
         } catch (Exception ex) {
             throw new IllegalStateException(ex);
         }
-        
-        _graphService.refreshGraph();
     }
 }

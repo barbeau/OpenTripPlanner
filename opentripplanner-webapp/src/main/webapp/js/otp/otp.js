@@ -132,9 +132,38 @@ otp.Class = function() {
         }
         otp.extend(extended, parent);
     }
+
+   // decorate new object with otp.js methods
+   extended.swapElements = otp.swapElements;
+
     Class.prototype = extended;
     return Class;
 };
+
+/** useful for debugging */
+otp.isLocalHost = function() {
+    try {
+        return document.location.href.indexOf('localhost') > 0;
+    } catch(e) {
+    }
+    return false;
+};
+
+
+/** swap element values with another object */
+otp.swapElements = function(object, elementName) {
+    if(object == null || elementName == null) return;
+
+    try {
+        var tmp = this[elementName];
+        this[elementName]   = object[elementName];
+        object[elementName] = tmp;
+    }
+    catch(e) {
+        console.log("EXCEPTION otp.swap(): couldn't swap element values named " + elementName + "\n" + e );
+    }
+};
+
 
 /**
  * APIFunction: extend
@@ -294,12 +323,12 @@ otp.configure = function(destination, source, getAll) {
  * 
  * @param {Object} obj
  */
-otp.clone = function(obj)
+otp.clone = function(obj, dest)
 {
-    if(obj == null || typeof(obj) != 'object')
+    if(obj == null || typeof(obj) != 'object' || obj.contentType == "application/xml") 
         return obj;
     
-    var copied = copied || {};
+    var copied = dest || {};
     var temp = new obj.constructor(); // changed (twice)
     copied[obj] = temp;
     for(var key in obj)

@@ -34,12 +34,26 @@ otp.locale.Gaelic = {
     {
         fromHere         : "Tosaigh turas anseo",
         toHere           : "Críochnaigh turas anseo",
+        intermediateHere : "Add intermediate point",  // TODO localize
 
         centerHere       : "Cur lár an léarscáil anseo",
         zoomInHere       : "Zúmáil amach anseo",
         zoomOutHere      : "Zúmáil isteach anseo",
         previous         : "Áit ar an léarscáil níos déanaí",
         next             : "Céad áit eile ar an léarscáil"
+    },
+
+    // TODO Localize Me
+    bikeTriangle : 
+    {
+        safeName : "Bike friendly",
+        safeSym  : "B",
+
+        hillName : "Flat",
+        hillSym  : "F",
+
+        timeName : "Quick",
+        timeSym  : "Q"
     },
 
     service : 
@@ -88,7 +102,10 @@ otp.locale.Gaelic = {
         ok           : "OK",
         cancel       : "Dúiltaigh",
         yes          : "Ar aghaidh",
-        no           : "Ní"
+        no           : "Ní",
+// TODO
+        showDetails  : "Show details...",
+        hideDetails  : "Hide details..."
     },
 
     // note: keep these lower case (and uppercase via template / code if needed)
@@ -155,6 +172,7 @@ otp.locale.Gaelic = {
     labels : 
     {
 // TODO
+        agency_msg   : "Service run by", // TODO
         about        : "About",
         stop_id      : "Stop ID",
         trip_details : "Weee Trip Details",
@@ -203,6 +221,8 @@ otp.locale.Gaelic = {
     {
 // TODO
         format        : "D, j M H:i",
+        date_format   : "d-m-Y",
+        time_format   : "H:i",
         minute        : "nóiméad",
         minutes       : "nóiméid",
         minute_abbrev : "nóiméad",
@@ -237,8 +257,10 @@ otp.locale.Gaelic = {
             fromHere      : "Ón áit seo",
             to            : "Go",
             toHere        : "Go dtí seo",
+            intermediate  : "Intermediate Place",          // TODO
             minimize      : "Teaspáin dom an",
             maxWalkDistance: "Súil is faide",
+            maxBikeDistance: "Súil is bike",              // TODO
             arriveDepart  : "Sroic roimh/Imigh ag",
             mode          : "Iompair ar",
             wheelchair    : "Turas oiriúnach do chathaoireacha rothaí", 
@@ -304,7 +326,8 @@ otp.locale.Gaelic = {
         [
           ['TRANSFERS', 'Aistrithe is lú'],
           ['QUICK',     'Turas is tapúla'],
-          ['SAFE',      'Turas is sabháilte']
+          ['SAFE',      'Turas is sabháilte'],
+          ['TRIANGLE',  'Custom trip...']  // TODO localize
         ],
     
         arriveDepart: 

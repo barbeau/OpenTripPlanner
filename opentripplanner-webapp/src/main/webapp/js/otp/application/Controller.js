@@ -31,9 +31,14 @@ otp.application.Controller = {
     /** */
     initialize : function(config)
     {
-        this.config = config;
-        if(this.config == null || this.config.map == null)
-            this.config = otp.config;
+        this.config = otp.util.ObjUtils.getConfig(config);
+
+        // TODO more work needed to make train, bikeshare, etc... modes a 'switchable' feature in the UI
+        // TODO see otp.config_defaults.planner.options and the related code as to how to turn stuff on & off
+        if(this.config.planner.options.showBikeshareMode)
+        {
+            otp.locale.English.tripPlanner.mode = otp.locale.English.tripPlanner.with_bikeshare_mode;
+        }
 
         // set defaults on the config.map if things don't already exist
         otp.inherit(this.config.map, {
@@ -50,14 +55,8 @@ otp.application.Controller = {
         this.map  = new otp.core.Map(this.config.map);
         this.ui   = new otp.core.UI({map:this.map, locale:this.config.locale});
 
-        // create logo image, using a custom logo if specified
-        var customLogo = this.config.logo;
-        var logoPath = (typeof customLogo === 'string') ? customLogo : 'images/ui/logoSmall.png';
-        var logoAnchorWrapper = Ext.get('logo').query('a')[0];
-        Ext.DomHelper.append(logoAnchorWrapper, {tag: 'img',
-                                                 alt: "OpenTripPlanner home",
-                                                 src: logoPath
-                                                });
+        // do things like localize HTML strings, and custom icons, etc...
+        otp.util.HtmlUtils.fixHtml(this.config);
 
         // initialize utilities
         otp.util.imagePathManager.addCustomAgencies(this.config.useCustomIconsForAgencies);
@@ -72,6 +71,7 @@ otp.application.Controller = {
         pconfig.ui  = this.ui;
         pconfig.locale = this.config.locale;
         pconfig.routerId = this.config.routerId;
+        pconfig.geocoder_cfg = pconfig.geocoder;
         this.planner = new otp.planner.Planner(pconfig);
         this.makeContextMenu();
         this.ui.accordion.add(this.planner.getPanel());
@@ -100,6 +100,10 @@ otp.application.Controller = {
     {
         // do the POI and the openTool stuff (and if a POI exists, suspend the pan on the tool)
         var p = this.params.getPoi(this.poi, this.map);
+
+        // full screen
+        if(this.params.isFullScreen())
+            this.ui.fullScreen(true);
 
         // trip planner forms
         var forms = this.planner.getForms();

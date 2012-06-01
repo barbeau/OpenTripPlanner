@@ -14,20 +14,31 @@
 package org.opentripplanner.graph_builder.impl.osm;
 
 import java.io.File;
+import java.util.HashMap;
 
 import junit.framework.TestCase;
 
+import org.junit.Before;
 import org.junit.Test;
 import org.opentripplanner.common.model.P2;
-import org.opentripplanner.graph_builder.model.osm.OSMWay;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.openstreetmap.model.OSMWay;
+import org.opentripplanner.openstreetmap.model.OSMWithTags;
+import org.opentripplanner.openstreetmap.impl.FileBasedOpenStreetMapProviderImpl;
 import org.opentripplanner.routing.edgetype.StreetTraversalPermission;
 import org.opentripplanner.routing.edgetype.TurnEdge;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 
 public class TestOpenStreetMapGraphBuilder extends TestCase {
 
+    private HashMap<Class<?>, Object> extra;
+
+    @Before
+    public void setUp() {
+        extra = new HashMap<Class<?>, Object>();
+    }
+    
     @Test
     public void testGraphBuilder() throws Exception {
 
@@ -42,7 +53,7 @@ public class TestOpenStreetMapGraphBuilder extends TestCase {
         provider.setPath(file);
         loader.setProvider(provider);
 
-        loader.buildGraph(gg);
+        loader.buildGraph(gg, extra);
 
         Vertex v2 = gg.getVertex("way 25660216 from 1"); // Kamiennogorska
         Vertex v2back = gg.getVertex("way 25660216 from 1 back"); // Kamiennogorska
@@ -72,7 +83,7 @@ public class TestOpenStreetMapGraphBuilder extends TestCase {
         boolean v3EdgeExists = false;
         boolean v4EdgeExists = false;
         boolean v4BackEdgeExists = false;
-        for (Edge e : gg.getOutgoing(v2)) {
+        for (Edge e : v2.getOutgoing()) {
             if (e instanceof TurnEdge) {
                 TurnEdge t = (TurnEdge) e;
                 Vertex tov = t.getToVertex();
@@ -84,7 +95,7 @@ public class TestOpenStreetMapGraphBuilder extends TestCase {
             }
         }
 
-        for (Edge e : gg.getOutgoing(v2back)) {
+        for (Edge e : v2back.getOutgoing()) {
             if (e instanceof TurnEdge) {
                 TurnEdge t = (TurnEdge) e;
                 Vertex tov = t.getToVertex();
@@ -95,7 +106,7 @@ public class TestOpenStreetMapGraphBuilder extends TestCase {
             }
         }
 
-        for (Edge e : gg.getOutgoing(v3)) {
+        for (Edge e : v3.getOutgoing()) {
             if (e instanceof TurnEdge) {
                 TurnEdge t = (TurnEdge) e;
                 Vertex tov = t.getToVertex();
@@ -106,7 +117,7 @@ public class TestOpenStreetMapGraphBuilder extends TestCase {
             }
         }
 
-        for (Edge e : gg.getOutgoing(v4back)) {
+        for (Edge e : v4back.getOutgoing()) {
             if (e instanceof TurnEdge) {
                 TurnEdge t = (TurnEdge) e;
                 Vertex tov = t.getToVertex();
@@ -122,8 +133,9 @@ public class TestOpenStreetMapGraphBuilder extends TestCase {
         assertTrue("There is no edge from v4back to v3back", v4BackEdgeExists);
     }
 
+    @Test
     public void testWayDataSet() {
-        OSMWay way = new OSMWay();
+        OSMWithTags way = new OSMWay();
         way.addTag("highway", "footway");
         way.addTag("cycleway", "lane");
         way.addTag("access", "no");
@@ -207,8 +219,9 @@ public class TestOpenStreetMapGraphBuilder extends TestCase {
         assertEquals ("sidewalk", propset.getCreativeNameForWay(way));
     }
 
+    @Test
     public void testCreativeNaming() {
-        OSMWay way = new OSMWay();
+        OSMWithTags way = new OSMWay();
         way.addTag("highway", "footway");
         way.addTag("cycleway", "lane");
         way.addTag("access", "no");
@@ -218,4 +231,19 @@ public class TestOpenStreetMapGraphBuilder extends TestCase {
         assertEquals("Highway with cycleway lane and access no and morx ",
                 namer.generateCreativeName(way));
     }
+
+// disabled pending discussion with author (AMB)
+//    @Test
+//    public void testMultipolygon() throws Exception {
+//        Graph gg = new Graph();
+//        OpenStreetMapGraphBuilderImpl loader = new OpenStreetMapGraphBuilderImpl();
+//
+//        FileBasedOpenStreetMapProviderImpl pr = new FileBasedOpenStreetMapProviderImpl();
+//        pr.setPath(new File(getClass().getResource("otp-multipolygon-test.osm").getPath()));
+//        loader.setProvider(pr);
+//
+//        loader.buildGraph(gg, extra);
+//
+//        assertNotNull(gg.getVertex("way -3535 from 4"));
+//    }
 }

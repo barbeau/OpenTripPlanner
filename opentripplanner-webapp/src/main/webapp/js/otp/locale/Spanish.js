@@ -26,7 +26,7 @@ otp.locale.Spanish = {
         rightClickMsg : "Haz click con el bot\xF3n derecho sobre el mapa para elegir los puntos de origen y destino.",
         attribution   : {
             title   : "License Attribution",
-            content : "Disclaimer goes here"
+            content : "Disclaimer goes here"  // TODO localize
         }
     },
 
@@ -34,12 +34,26 @@ otp.locale.Spanish = {
     {
         fromHere         : "Salir desde aqu\xED",
         toHere           : "Llegar hasta aqu\xED",
+        intermediateHere : "Add intermediate point",
 
         centerHere       : "Centrar mapa aqu\xED",
         zoomInHere       : "Acercar",
         zoomOutHere      : "Alejar",
         previous         : "\xDAltimo encuadre",
         next             : "Siguiente encuadre"
+    },
+
+    // TODO Localize Me
+    bikeTriangle : 
+    {
+        safeName : "Bike friendly",
+        safeSym  : "B",
+
+        hillName : "Flat",
+        hillSym  : "F",
+
+        timeName : "Quick",
+        timeSym  : "Q"
     },
 
     service : 
@@ -88,7 +102,9 @@ otp.locale.Spanish = {
         ok           : "OK",
         cancel       : "Cancelar",
         yes          : "S\xED",
-        no           : "No"
+        no           : "No",
+        showDetails  : "Mostrar detalles...",
+        hideDetails  : "Ocultar detalles..."
     },
 
     // note: keep these lower case (and uppercase via template / code if needed)
@@ -148,8 +164,11 @@ otp.locale.Spanish = {
         end_at       : "Destino:"
     },
 
+    // see otp.planner.Templates for use
     labels : 
     {
+        agency_msg   : "Service run by", // TODO
+        agency_msg_tt: "Open agency website in separate window...", // TODO
         about        : "Alrededor de ",
         stop_id      : "Stop ID",
         trip_details : "Detalles del viaje",
@@ -162,6 +181,7 @@ otp.locale.Spanish = {
         alert_for_rt : "Alert for route"
     },
 
+    // see otp.planner.Templates for use -- one output are the itinerary leg headers
     modes : 
     {
         WALK:           "A PIE",
@@ -200,6 +220,8 @@ otp.locale.Spanish = {
         second_abbrev  : "sec",
         seconds_abbrev : "secs",
         format         : "D, j M H:i",
+        date_format    : "d-m-Y",
+        time_format    : "H:i",
         months         : ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
     },
 
@@ -229,8 +251,10 @@ otp.locale.Spanish = {
             fromHere      : "Desde aqu\xED",
             to            : "Hasta",
             toHere        : "Hasta aqu\xED",
+            intermediate  : "Intermediate Place",          // TODO
             minimize      : "Mostrar el",
             maxWalkDistance: "M\xE1xima distancia hasta la parada",
+            maxBikeDistance: "M\xE1xima distancia hasta la bicicletas",               // TODO
             arriveDepart  : "Llegada/Salida a",
             mode          : "Modo de viaje",
             wheelchair    : "Viaje con accesibilidad",
@@ -295,8 +319,9 @@ otp.locale.Spanish = {
         options: 
         [
           ['TRANSFERS', 'M\xEDnimo n\xFAmero de transbordos'],
-          ['QUICK',     'Viaje m\xE1s corto']//,
-          //['SAFE',      'Viaje m\xE1s seguro']
+          ['QUICK',     'Viaje m\xE1s corto'],
+          ['SAFE',      'Viaje m\xE1s seguro'],
+          ['TRIANGLE',  'Custom trip...'] // TODO localize
         ],
     
         arriveDepart: 

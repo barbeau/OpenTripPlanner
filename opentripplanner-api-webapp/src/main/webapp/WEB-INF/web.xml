@@ -14,8 +14,18 @@
 	<listener>
 		<listener-class>org.springframework.web.context.request.RequestContextListener</listener-class>
 	</listener>
-	<!-- Enables Spring Security -->
+	
+	<filter>
+		<filter-name>jsonpCallbackFilter</filter-name>
+		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+	</filter>
 
+	<filter-mapping>
+		<filter-name>jsonpCallbackFilter</filter-name>
+		<url-pattern>/ws/*</url-pattern>
+	</filter-mapping>
+	
+	<!-- Enables Spring Security -->
 	<filter>
 		<filter-name>springSecurityFilterChain</filter-name>
 		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
@@ -33,15 +43,16 @@
 	<servlet>
 		<servlet-name>Jersey</servlet-name>
 		<servlet-class>org.opentripplanner.api.servlet.ApiServlet</servlet-class>
-	    <!-- switch the order of these two init-param elements for Tomcat > 6.0 -->
-		<init-param>
-			<param-name>com.sun.jersey.config.property.packages</param-name>
-			<param-value>com.sun.jersey.samples.jsonfromjaxb</param-value>
-		</init-param>
+		<!-- scan the semicolon-separated list packages for JAX-RS resource and parameter provider classes -->
 		<init-param>
 			<param-name>com.sun.jersey.config.property.packages</param-name>
 			<param-value>org.opentripplanner</param-value>
 		</init-param>
+		<!-- to restore the old Badgerfish mapping, delete the following element -->
+		<init-param>
+			<param-name>com.sun.jersey.api.json.POJOMappingFeature</param-name>
+			<param-value>true</param-value>
+  		</init-param>
 		<load-on-startup>1</load-on-startup>
 	</servlet>
 	<servlet-mapping>

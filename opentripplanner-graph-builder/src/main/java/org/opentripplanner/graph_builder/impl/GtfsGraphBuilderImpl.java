@@ -15,8 +15,9 @@ package org.opentripplanner.graph_builder.impl;
 
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -25,16 +26,15 @@ import java.util.Map;
 import org.onebusaway.csv_entities.EntityHandler;
 import org.onebusaway.gtfs.impl.GtfsRelationalDaoImpl;
 import org.onebusaway.gtfs.impl.calendar.CalendarServiceDataFactoryImpl;
-import org.onebusaway.gtfs.impl.calendar.CalendarServiceImpl;
 import org.onebusaway.gtfs.model.Agency;
 import org.onebusaway.gtfs.model.IdentityBean;
 import org.onebusaway.gtfs.model.ShapePoint;
-import org.onebusaway.gtfs.model.Stop;
 import org.onebusaway.gtfs.model.Trip;
 import org.onebusaway.gtfs.model.calendar.CalendarServiceData;
 import org.onebusaway.gtfs.serialization.GtfsReader;
 import org.onebusaway.gtfs.services.GenericMutableDao;
 import org.onebusaway.gtfs.services.GtfsMutableRelationalDao;
+import org.opentripplanner.calendar.impl.MultiCalendarServiceImpl;
 import org.opentripplanner.graph_builder.model.GtfsBundle;
 import org.opentripplanner.graph_builder.model.GtfsBundles;
 import org.opentripplanner.graph_builder.services.EntityReplacementStrategy;
@@ -42,9 +42,11 @@ import org.opentripplanner.graph_builder.services.GraphBuilder;
 import org.opentripplanner.graph_builder.services.GraphBuilderWithGtfsDao;
 import org.opentripplanner.gtfs.GtfsContext;
 import org.opentripplanner.gtfs.GtfsLibrary;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.TransitStop;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation.Variety;
 import org.opentripplanner.routing.edgetype.factory.GTFSPatternHopFactory;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.services.FareServiceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,11 +70,25 @@ public class GtfsGraphBuilderImpl implements GraphBuilder {
 
     private GtfsBundles _gtfsBundles;
 
-    private GtfsMutableRelationalDao _dao = new GtfsRelationalDaoImpl();
-
     private EntityReplacementStrategy _entityReplacementStrategy = new EntityReplacementStrategyImpl();
 
-	private List<GraphBuilderWithGtfsDao> gtfsGraphBuilders;
+    private List<GraphBuilderWithGtfsDao> gtfsGraphBuilders;
+
+    EntityHandler counter = new EntityCounter();
+
+    private FareServiceFactory _fareServiceFactory;
+
+    Map<Agency, GtfsBundle> agenciesSeen = new HashMap<Agency, GtfsBundle>();
+
+    private boolean generateFeedIds = false;
+
+    public List<String> provides() {
+        return Arrays.asList("transit");
+    }
+
+    public List<String> getPrerequisites() {
+        return Collections.emptyList();
+    }
 
     public void setGtfsBundles(GtfsBundles gtfsBundles) {
         _gtfsBundles = gtfsBundles;
@@ -81,150 +97,140 @@ public class GtfsGraphBuilderImpl implements GraphBuilder {
         for (GtfsBundle bundle : gtfsBundles.getBundles()) {
             String key = bundle.getDataKey();
             if (bundles.contains(key)) {
-                throw new RuntimeException("duplicate GTFS bundle " +  key);
+                throw new RuntimeException("duplicate GTFS bundle " + key);
             }
             bundles.add(key);
         }
-    }
-
-    public void setDao(GtfsMutableRelationalDao dao) {
-        _dao = dao;
     }
 
     public void setEntityReplacementStrategy(EntityReplacementStrategy strategy) {
         _entityReplacementStrategy = strategy;
     }
 
+    public void setFareServiceFactory(FareServiceFactory factory) {
+        _fareServiceFactory = factory;
+    }
+
     @Override
-    public void buildGraph(Graph graph) {
-            try {
-                readGtfs();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+    public void buildGraph(Graph graph, HashMap<Class<?>, Object> extra) {
+
+        MultiCalendarServiceImpl service = new MultiCalendarServiceImpl();
+
+        try {
+            int bundleIndex = 0;
+            for (GtfsBundle gtfsBundle : _gtfsBundles.getBundles()) {
+                bundleIndex += 1;
+                GtfsMutableRelationalDao dao = new GtfsRelationalDaoImpl();
+                GtfsContext context = GtfsLibrary.createContext(dao, service);
+                GTFSPatternHopFactory hf = new GTFSPatternHopFactory(context);
+                hf.setFareServiceFactory(_fareServiceFactory);
+
+                if (generateFeedIds && gtfsBundle.getDefaultAgencyId() == null) {
+                    gtfsBundle.setDefaultAgencyId("FEED#" + bundleIndex);
+                }
+
+                loadBundle(gtfsBundle, graph, dao);
+
+                CalendarServiceDataFactoryImpl csfactory = new CalendarServiceDataFactoryImpl();
+                csfactory.setGtfsDao(dao);
+                CalendarServiceData data = csfactory.createData();
+                service.addData(data, dao);
+
+                hf.setDefaultStreetToStopTime(gtfsBundle.getDefaultStreetToStopTime());
+                hf.run(graph);
+
+                if (gtfsBundle.doesTransfersTxtDefineStationPaths()) {
+                    hf.createStationTransfers(graph);
+                }
+                // run any additional graph builders that require the DAO
+                if (gtfsGraphBuilders != null) {
+                    for (GraphBuilderWithGtfsDao builder : gtfsGraphBuilders) {
+                        builder.setDao(dao);
+                        builder.buildGraph(graph);
+                        builder.setDao(null); // clean up
+                    }
+                }
             }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
 
-            CalendarServiceDataFactoryImpl factory = new CalendarServiceDataFactoryImpl();
-            factory.setGtfsDao(_dao);
-            CalendarServiceData data = factory.createData();
+        // We need to save the calendar service data so we can use it later
+        CalendarServiceData data = service.getData();
+        graph.putService(CalendarServiceData.class, data);
+        graph.updateTransitFeedValidity(data);
 
-            CalendarServiceImpl service = new CalendarServiceImpl();
-            service.setData(data);
-
-            GtfsContext context = GtfsLibrary.createContext(_dao, service);
-
-            // Load stops
-            for (Stop stop : _dao.getAllStops()) {
-
-                String id = GtfsLibrary.convertIdToString(stop.getId());
-                graph.addVertex(new TransitStop(id, stop.getLon(), stop.getLat(), stop.getName(),
-                        stop.getId(), stop));
-            }
-
-            GTFSPatternHopFactory hf = new GTFSPatternHopFactory(context);
-            hf.run(graph);
-
-            // We need to save the calendar service data so we can use it later
-            graph.putService(CalendarServiceData.class, data);
-            graph.updateTransitFeedValidity(data);
-            
-            //run any additional graph builders that require the DAO
-            if (gtfsGraphBuilders != null) {
-            	for (GraphBuilderWithGtfsDao builder : gtfsGraphBuilders) {
-            		builder.setDao(_dao);
-            		builder.buildGraph(graph);
-            		builder.setDao(null); //clean up
-            	}
-            }
-            // if in-memory DAO is being used, replace it with an empty one
-            // to free up some space for other graphbuilders
-            if (_dao instanceof GtfsRelationalDaoImpl) 
-                _dao = new GtfsRelationalDaoImpl();
     }
 
     /****
      * Private Methods
      ****/
 
-    private void readGtfs() throws IOException {
+    private void loadBundle(GtfsBundle gtfsBundle, Graph graph, GtfsMutableRelationalDao dao)
+            throws IOException {
 
-        StoreImpl store = new StoreImpl();
-        List<GtfsReader> readers = new ArrayList<GtfsReader>();
-
-        EntityHandler counter = new EntityCounter();
-
-        for (GtfsBundle gtfsBundle : _gtfsBundles.getBundles()) {
-
-            GtfsReader reader = new GtfsReader();
-            reader.setInputSource(gtfsBundle.getCsvInputSource());
-            reader.setEntityStore(store);
-            reader.setInternStrings(true);
-            
-            if (gtfsBundle.getDefaultAgencyId() != null)
-                reader.setDefaultAgencyId(gtfsBundle.getDefaultAgencyId());
-
-            for (Map.Entry<String, String> entry : gtfsBundle.getAgencyIdMappings().entrySet())
-                reader.addAgencyIdMapping(entry.getKey(), entry.getValue());
-
-            if (_log.isDebugEnabled())
-                reader.addEntityHandler(counter);
-
-            if(gtfsBundle.getDefaultBikesAllowed())
-                reader.addEntityHandler(new EntityBikeability(true));
-
-            readers.add(reader);
-        }
-
-        // No feeds?
-        if (readers.isEmpty()) {
-            _log.info("no feeds specified");
-            return;
-        }
-
+        StoreImpl store = new StoreImpl(dao);
         store.open();
+        _log.info("reading {}", gtfsBundle.toString());
 
-        List<Agency> agencies = new ArrayList<Agency>(readers.size());
-        List<Class<?>> entityClasses = readers.get(0).getEntityClasses();
+        GtfsReader reader = new GtfsReader();
+        reader.setInputSource(gtfsBundle.getCsvInputSource());
+        reader.setEntityStore(store);
 
-        for (Class<?> entityClass : entityClasses) {
+        reader.setInternStrings(true);
+
+        if (gtfsBundle.getDefaultAgencyId() != null)
+            reader.setDefaultAgencyId(gtfsBundle.getDefaultAgencyId());
+
+        for (Map.Entry<String, String> entry : gtfsBundle.getAgencyIdMappings().entrySet())
+            reader.addAgencyIdMapping(entry.getKey(), entry.getValue());
+
+        if (_log.isDebugEnabled())
+            reader.addEntityHandler(counter);
+
+        if (gtfsBundle.getDefaultBikesAllowed())
+            reader.addEntityHandler(new EntityBikeability(true));
+
+        for (Class<?> entityClass : reader.getEntityClasses()) {
             _log.info("reading entities: " + entityClass.getName());
-
-            for (GtfsReader reader : readers) {
-
-                // Agencies are the first entity class to be read.
-                // Accumulate the agencies from all GTFS feeds to allow cross-feed 
-                // references in later entity classes.
-                
-                // Set each reader's agency list to a copy of the list
-                // containing all agencies seen up to this point
-                if (entityClass.equals(Agency.class))
-                    reader.setAgencies(agencies);
-
-                reader.readEntities(entityClass);
-
-                // Update the list of all agencies seen to include those just read 
-                if (entityClass.equals(Agency.class))
-                    agencies = reader.getAgencies();
-
-                store.flush();
+            reader.readEntities(entityClass);
+            store.flush();
+            if (entityClass == Agency.class) {
+                for (Agency agency : reader.getAgencies()) {
+                    GtfsBundle existing = agenciesSeen.get(agency);
+                    if (existing != null) {
+                        _log.warn(GraphBuilderAnnotation.register(graph,
+                                Variety.AGENCY_NAME_COLLISION, agency, existing.toString()));
+                    } else {
+                        agenciesSeen.put(agency, gtfsBundle);
+                    }
+                }
             }
         }
 
         store.close();
+
     }
 
     public void setGtfsGraphBuilders(List<GraphBuilderWithGtfsDao> gtfsGraphBuilders) {
-		this.gtfsGraphBuilders = gtfsGraphBuilders;
-	}
+        this.gtfsGraphBuilders = gtfsGraphBuilders;
+    }
 
-	public List<GraphBuilderWithGtfsDao> getGtfsGraphBuilders() {
-		return gtfsGraphBuilders;
-	}
+    public List<GraphBuilderWithGtfsDao> getGtfsGraphBuilders() {
+        return gtfsGraphBuilders;
+    }
 
-	private class StoreImpl implements GenericMutableDao {
+    private class StoreImpl implements GenericMutableDao {
+
+        private GtfsMutableRelationalDao dao;
+
+        StoreImpl(GtfsMutableRelationalDao dao) {
+            this.dao = dao;
+        }
 
         @Override
         public void open() {
-            _dao.open();
+            dao.open();
         }
 
         @Override
@@ -232,7 +238,7 @@ public class GtfsGraphBuilderImpl implements GraphBuilder {
             Serializable replacement = _entityReplacementStrategy.getReplacementEntityId(type, id);
             if (replacement != null)
                 id = replacement;
-            return _dao.getEntityForId(type, id);
+            return dao.getEntityForId(type, id);
         }
 
         @Override
@@ -247,17 +253,17 @@ public class GtfsGraphBuilderImpl implements GraphBuilder {
                     return;
             }
 
-            _dao.saveEntity(entity);
+            dao.saveEntity(entity);
         }
 
         @Override
         public void flush() {
-            _dao.flush();
+            dao.flush();
         }
 
         @Override
         public void close() {
-            _dao.close();
+            dao.close();
         }
 
         @Override
@@ -293,7 +299,7 @@ public class GtfsGraphBuilderImpl implements GraphBuilder {
         @Override
         public void handleEntity(Object bean) {
             int count = incrementCount(bean.getClass());
-            if (count % 10000 == 0)
+            if (count % 1000000 == 0)
                 if (_log.isDebugEnabled()) {
                     String name = bean.getClass().getName();
                     int index = name.lastIndexOf('.');
@@ -324,14 +330,26 @@ public class GtfsGraphBuilderImpl implements GraphBuilder {
 
         @Override
         public void handleEntity(Object bean) {
-            if(!(bean instanceof Trip)) {
+            if (!(bean instanceof Trip)) {
                 return;
             }
 
             Trip trip = (Trip) bean;
-            if(_defaultBikesAllowed && trip.getTripBikesAllowed() == 0 && trip.getRoute().getBikesAllowed() == 0) {
+            if (_defaultBikesAllowed && trip.getTripBikesAllowed() == 0
+                    && trip.getRoute().getBikesAllowed() == 0) {
                 trip.setTripBikesAllowed(2);
             }
         }
+    }
+
+    @Override
+    public void checkInputs() {
+        for (GtfsBundle bundle : _gtfsBundles.getBundles()) {
+            bundle.checkInputs();
+        }
+    }
+
+    public void setGenerateFeedIds(boolean generateFeedIds) {
+        this.generateFeedIds = generateFeedIds;
     }
 }

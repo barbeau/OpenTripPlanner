@@ -14,15 +14,13 @@
 package org.opentripplanner.routing.core;
 
 import java.util.HashMap;
-import java.util.logging.Logger;
 
 /**
- * <p><strong>Fare support has not yet been implemented.</strong>
- * </p><p>
- * Fare is a set of fares for different classes of users.</p>
+ * <p>
+ * Fare is a set of fares for different classes of users.
+ * </p>
  */
 public class Fare {
-    protected static final Logger LOGGER = Logger.getLogger(Fare.class.getCanonicalName());
 
     public static enum FareType {
         regular, student, senior, tram, special
@@ -40,11 +38,18 @@ public class Fare {
     public void addFare(FareType fareType, WrappedCurrency currency, int cents) {
         fare.put(fareType, new Money(currency, cents));
     }
-    
+
     public Money getFare(FareType type) {
         return fare.get(type);
     }
-    
+
+    public void addCost(int surcharge) {
+        for (Money cost : fare.values()) {
+            int cents = cost.getCents();
+            cost.setCents(cents + surcharge);
+        }
+    }
+
     public String toString() {
         StringBuffer buffer = new StringBuffer("Fare(");
         for (FareType type : fare.keySet()) {

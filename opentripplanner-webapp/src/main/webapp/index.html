@@ -7,7 +7,9 @@
     <meta name="description" content="The Open Trip Planner provides step-by-step directions for using multiple modes of travel, including transit, biking and walking. Find out more about this open source project at http://opentripplanner.org." />
     <meta name="keywords" content="interactive map, map, trip planner, bus, rail, transit, max, tripplanner, plan, trip, plans, itinerary, schedule planner, planning, planner, scheduler, assistant, wizard, travel, schedule, guide, map, route, times, plan a trip" />
     <meta content="tripplanner v0.4 - May 2011 (FXP)"/>
-
+    <meta http-equiv="X-UA-Compatible" content="IE=8;FF=3;OtherUA=4" />
+    
+    <link rel="shortcut icon" href="images/ui/favicon.ico" />
     <link rel="stylesheet" type="text/css" href="js/lib/ext/resources/css/ext-all-notheme.css" />
     <link rel="stylesheet" type="text/css" href="js/lib/ext/resources/css/xtheme-transit-extend.css" />
     <link rel="stylesheet" type="text/css" href="js/lib/openlayers/theme/default/style.css" />
@@ -46,19 +48,27 @@
     <script src="js/otp/locale/Gaelic.js"></script>
     <script src="js/otp/locale/Hungarian.js"></script>
     <script src="js/otp/locale/Italian.js"></script>
+    <script src="js/otp/locale/Dutch.js"></script>
+    <script src="js/otp/locale/German.js"></script>
+    <script src="js/otp/locale/Hebrew.js"></script>
     <script src="js/otp/locale/Marathi.js"></script>
     <script src="js/otp/locale/Polish.js"></script>
-    <script src="js/otp/locale/Spanish.js"></script>    
+    <script src="js/otp/locale/Portuguese.js"></script>
+    <script src="js/otp/locale/Spanish.js"></script>
     <script src="js/otp/util/AnalyticsUtils.js"></script>
     <script src="js/otp/util/DateUtils.js"></script>
     <script src="js/otp/util/ObjUtils.js"></script>
+    <script src="js/otp/util/HtmlUtils.js"></script>
     <script src="js/otp/util/StringFormattingUtils.js"></script>
     <script src="js/otp/util/OpenLayersUtils.js"></script>
     <script src="js/otp/util/ExtUtils.js"></script>
     <script src="js/otp/util/ImagePathManager.js"></script>
     <script src="js/otp/util/ParseUrlParams.js"></script>
     <script src="js/otp/planner/Utils.js"></script>
+    <script src="js/otp/planner/ItineraryData.js"></script>
+    <script src="js/otp/planner/Print.js"></script>
     <script src="js/otp/planner/FormsOptionsManager.js"></script>
+    <script src="js/otp/planner/Geocoder.js"></script>
     <script src="js/otp/planner/GeocoderResultsSelector.js"></script>
     <script src="js/otp/planner/BikeTriangle.js"></script>
     <script src="js/otp/planner/ContextMenu.js"></script>
@@ -73,6 +83,8 @@
     <script src="js/otp/planner/poi/Popup.js"></script>
     <script src="js/otp/planner/poi/Style.js"></script>
     <script src="js/otp/core/ComboBox.js"></script>
+    <script src="js/otp/util/SolrUtils.js"></script>
+    <script src="js/otp/core/SolrComboBox.js"></script>
     <script src="js/otp/core/Map.js"></script>
     <script src="js/otp/core/Measure.js"></script>
     <script src="js/otp/core/UI.js"></script>

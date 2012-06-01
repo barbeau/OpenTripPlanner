@@ -28,7 +28,8 @@ otp.planner.poi.Control = {
     map          : null,
     styleMap     : null,
     visibility   : false,
-    width        : 250,  // popup width
+    width        : 250,    // popup width
+    isMercator   : true,   // lat, lon - WGS 84 by default
 
     m_control    : null,
     m_popup      : null,
@@ -36,6 +37,7 @@ otp.planner.poi.Control = {
     m_fromTrip   : null,
     m_toTrip     : null,
     m_features   : [],
+    m_intermediates : [],
 
     initialize: function(config)
     {
@@ -45,6 +47,7 @@ otp.planner.poi.Control = {
 
         // step 2: make layer
         this.layer = new OpenLayers.Layer.Vector(this.name, {projection: otp.core.MapStatic.dataProjection, displayInLayerSwitcher: false});
+        this.layer.OTP_LAYER = true;
         this.drag  = new OpenLayers.Control.DragFeature(this.layer);
 
         this.map.addLayer(this.layer);
@@ -86,6 +89,20 @@ otp.planner.poi.Control = {
         }
     },
 
+    /** */
+    zoomToExtent : function()
+    {
+        try
+        {
+            var e = this.layer.getDataExtent();
+            this.map.zoomToExtent(e);
+        }
+        catch(e)
+        {
+            console.log("EXCEPTION poi.zoomToExtent: " + e);
+        }
+    },
+
     destroyPopup: function()
     {
         try
@@ -114,15 +131,17 @@ otp.planner.poi.Control = {
 
             f.attributes.m_text = ll.lon + "," + ll.lat;
             if(f.attributes.m_to)
-                otp.planner.StaticForms.setTo(f.attributes.m_text, ll.lon, ll.lat, true, true);
+                otp.planner.StaticForms.setTo(null, ll.lon, ll.lat, true, true);
             if(f.attributes.m_from)
-                otp.planner.StaticForms.setFrom(f.attributes.m_text, ll.lon, ll.lat, true, true);
+                otp.planner.StaticForms.setFrom(null, ll.lon, ll.lat, true, true);
         }
         catch(e)
         {
             console.log("EXCEPTION onComplete: " + e);
         }
     },
+
+
 
     /** */
     highlight : function(x, y, zoom, text, trustedText)
@@ -151,6 +170,17 @@ otp.planner.poi.Control = {
     },
 
     /** */
+    setFromCoord : function(coord, text, move)
+    {
+        if(coord)
+        {
+            var lat = otp.util.ObjUtils.getLat(coord);
+            var lon = otp.util.ObjUtils.getLon(coord);
+            this.setFrom(lon, lat, text, move);
+        }
+    },
+
+    /** */
     setTo : function(x, y, text, move)
     {
         if(x == null || y == null) return;
@@ -162,16 +192,58 @@ otp.planner.poi.Control = {
     },
 
     /** */
+    setToCoord : function(coord, text, move)
+    {
+        if(coord)
+        {
+            var lat = otp.util.ObjUtils.getLat(coord);
+            var lon = otp.util.ObjUtils.getLon(coord);
+            this.setTo(lon, lat, text, move);
+        }
+    },
+
+    addIntermediate: function(x, y, text, move)
+    {
+        if(x == null || y == null) return;
+        var inter = this.makeFeature(x, y, {m_text:text}, otp.planner.poi.Style.intermediatePlace);
+        this.show();
+        if(move) otp.util.OpenLayersUtils.setCenter(this.map, x, y);
+        this.drag.activate();   
+        this.m_intermediates.push(inter);
+        return inter;
+    },
+    
+    removeIntermediate: function(inter)
+    {
+        if(inter)
+        {
+            this._destroyFeature(inter);
+            for(var i=0; i < this.m_intermediates.length; i++) { 
+                if(this.m_intermediates[i]==inter) this.m_intermediates.splice(i,1); 
+            }
+        }
+    },
+    
+    removeAllIntermediates: function() {
+        for(var i=0; i < this.m_intermediates.length; i++) { 
+            this._destroyFeature(this.m_intermediates[i]); 
+        }
+        this.m_intermediates = new Array();
+    },
+
+    /** */
     clearTrip : function()
     {
         this._destroyFeature(this.m_toTrip);
         this._destroyFeature(this.m_fromTrip);
+        this.removeAllIntermediates();
     },
 
     /** */
     clear : function()
     {
         this._destroyFeatures(this.m_features);
+        this.removeAllIntermediates();
         this.m_features = new Array();
         this.hide();
         this.drag.deactivate();
@@ -266,19 +338,6 @@ otp.planner.poi.Control = {
         popup.doLayout();
 
         return popup;
-    },
-
-    /** */
-    OLDmakePopup : function(feature, config, text, trustedText)
-    {
-        if(trustedText == null)
-            trustedText = "";
-        if(text == null)
-            text = feature.attributes.m_text;
-            
-        //text = trimet.utils.StringUtils.clean(text);
-        feature.attributes.m_text = text;
-        return new otp.planner.poi.Popup(feature, config, text + ' ' + trustedText);
     },
 
     /** */

@@ -14,15 +14,18 @@
 package org.opentripplanner.routing.edgetype;
 
 import org.onebusaway.gtfs.model.Trip;
-import org.opentripplanner.routing.core.AbstractEdge;
+import org.opentripplanner.common.geometry.GeometryUtils;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.AbstractEdge;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Vertex;
+import org.opentripplanner.routing.vertextype.StreetVertex;
+import org.opentripplanner.routing.vertextype.TransitStop;
 
 import com.vividsolutions.jts.geom.Coordinate;
-import com.vividsolutions.jts.geom.GeometryFactory;
 import com.vividsolutions.jts.geom.LineString;
 
 /** 
@@ -35,11 +38,19 @@ public class StreetTransitLink extends AbstractEdge {
     private static final long serialVersionUID = -3311099256178798981L;
     private static final double STL_TRAVERSE_COST = 1;
 
-    private static GeometryFactory _geometryFactory = new GeometryFactory();
     private boolean wheelchairAccessible;
-        
-    public StreetTransitLink(Vertex fromv, Vertex tov, boolean wheelchairAccessible) {
+
+    private TransitStop transitStop;
+
+    public StreetTransitLink(StreetVertex fromv, TransitStop tov, boolean wheelchairAccessible) {
     	super(fromv, tov);
+    	transitStop = tov;
+        this.wheelchairAccessible = wheelchairAccessible;
+    }
+
+    public StreetTransitLink(TransitStop fromv, StreetVertex tov, boolean wheelchairAccessible) {
+        super(fromv, tov);
+        transitStop = fromv;
         this.wheelchairAccessible = wheelchairAccessible;
     }
 
@@ -53,7 +64,7 @@ public class StreetTransitLink extends AbstractEdge {
 
     public LineString getGeometry() {
         Coordinate[] coordinates = new Coordinate[] { fromv.getCoordinate(), tov.getCoordinate()};
-        return _geometryFactory.createLineString(coordinates);
+        return GeometryUtils.getGeometryFactory().createLineString(coordinates);
     }
 
     public TraverseMode getMode() {
@@ -71,14 +82,25 @@ public class StreetTransitLink extends AbstractEdge {
         }
         // disallow traversing two StreetTransitLinks in a row.
         // prevents router using transit stops as shortcuts to get around turn restrictions.
-        if (s0.getBackEdge() instanceof StreetTransitLink)
+        // also disallow going through stop -> station -> stop as a shortcut.
+        Edge backEdge = s0.getBackEdge();
+        Edge bbackEdge = s0.getBackState() != null ? s0.getBackState()
+                .getBackEdge() : null;
+        Edge bbbackEdge = s0.getBackState() != null
+                && s0.getBackState().getBackState() != null ? s0.getBackState()
+                .getBackState().getBackEdge() : null;
+        if (backEdge instanceof StreetTransitLink)
+            return null;
+        if (backEdge instanceof FreeEdge && bbackEdge instanceof StreetTransitLink)
+            return null;
+        if (backEdge instanceof FreeEdge && bbackEdge instanceof FreeEdge && bbbackEdge instanceof StreetTransitLink)
             return null;
         // Do not check here whether transit modes are selected. A check for the presence of 
         // transit modes will instead be done in the following PreBoard edge.
         // This allows finding transit stops with walk-only options.
         StateEditor s1 = s0.edit(this);
-        s1.incrementTimeInSeconds(1);
-        s1.incrementWeight(STL_TRAVERSE_COST);
+        s1.incrementTimeInSeconds(transitStop.getStreetToStopTime() + 1);
+        s1.incrementWeight(STL_TRAVERSE_COST + transitStop.getStreetToStopTime());
         return s1.makeState();
     }
 
@@ -91,10 +113,9 @@ public class StreetTransitLink extends AbstractEdge {
     // anecdotally, the lower bound search is about 2x faster when you don't reach stops
     // and therefore don't even consider boarding
     @Override
-    public double weightLowerBound(TraverseOptions options) {
+    public double weightLowerBound(RoutingRequest options) {
         return options.transitAllowed() ? 0 : Double.POSITIVE_INFINITY;
     }
-
 
     public Vertex getFromVertex() {
         return fromv;

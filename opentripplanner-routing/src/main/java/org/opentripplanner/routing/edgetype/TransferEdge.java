@@ -13,11 +13,11 @@
 
 package org.opentripplanner.routing.edgetype;
 
-import org.opentripplanner.routing.core.AbstractEdge;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.graph.AbstractEdge;
+import org.opentripplanner.routing.graph.Vertex;
 
 import com.vividsolutions.jts.geom.Geometry;
 
@@ -89,18 +89,6 @@ public class TransferEdge extends AbstractEdge {
         s1.incrementTimeInSeconds(time);
         s1.incrementWeight(time);
         return s1.makeState();
-    }
-
-    public boolean equals(Object o) {
-        if (!(o instanceof TransferEdge)) {
-            return false;
-        }
-        TransferEdge t = (TransferEdge) o;
-        return t.getToVertex().equals(getToVertex()) && t.getFromVertex().equals(getFromVertex());
-    }
-    
-    public int hashCode() {
-        return tov.hashCode() ^ fromv.hashCode();
     }
 
     public void setGeometry(Geometry geometry) {

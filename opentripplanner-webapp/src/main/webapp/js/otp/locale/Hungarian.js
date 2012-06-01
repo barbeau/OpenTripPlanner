@@ -34,12 +34,26 @@ otp.locale.Hungarian = {
     {
         fromHere         : "Útvonal kezdete itt",
         toHere           : "Útvonal vége itt",
+        intermediateHere : "Add intermediate point",  // TODO localize
 
         centerHere       : "Térkép középre helyezése ide",
         zoomInHere       : "Közelítés ide",
         zoomOutHere      : "Távolítás innen",
         previous         : "Legutóbbi térképpozíció",
         next             : "Következő térképpozíció"
+    },
+
+    // TODO Localize Me
+    bikeTriangle : 
+    {
+        safeName : "Bike friendly",
+        safeSym  : "B",
+
+        hillName : "Flat",
+        hillSym  : "F",
+
+        timeName : "Quick",
+        timeSym  : "Q"
     },
 
     service : 
@@ -88,7 +102,10 @@ otp.locale.Hungarian = {
         ok           : "OK",
         cancel       : "Mégse",
         yes          : "Igen",
-        no           : "Nem"
+        no           : "Nem",
+// TODO
+        showDetails  : "Show details...",
+        hideDetails  : "Hide details..."
     },
 
     // note: keep these lower case (and uppercase via template / code if needed)
@@ -154,6 +171,8 @@ otp.locale.Hungarian = {
     labels : 
     {
 // TODO
+        agency_msg   : "Service run by", // TODO
+        agency_msg_tt: "Open agency website in separate window...", // TODO
         about        : "About",
         stop_id      : "Stop ID",
         trip_details : "útvonal Details",
@@ -202,6 +221,8 @@ otp.locale.Hungarian = {
     {
 // TODO
         format        : "D, j M H:i",
+        date_format   : "d-m-Y",
+        time_format   : "H:i",
         minute        : "minute",
         minutes       : "minutes",
         minute_abbrev : "perc",
@@ -236,8 +257,10 @@ otp.locale.Hungarian = {
             fromHere      : "Innen",
             to            : "Hová",
             toHere        : "Ide",
+            intermediate  : "Intermediate Place",          // TODO
             minimize      : "A következő megjelenítése",
             maxWalkDistance: "Maximális gyaloglás",
+            maxBikeDistance: "Maximális bike",              // TODO
             arriveDepart  : "Érkezés/indulás",
             mode          : "Utazás ezzel",
             wheelchair    : "Kerekesszékkel megtehető útvonal", 
@@ -303,7 +326,8 @@ otp.locale.Hungarian = {
         [
           ['TRANSFERS', 'Legkevesebb átszállással'],
           ['QUICK',     'Leggyorsabb útvonal'],
-          ['SAFE',      'Legbiztonságosabb útvonal']
+          ['SAFE',      'Legbiztonságosabb útvonal'],
+          ['TRIANGLE',  'Custom trip...']  // TODO localize
         ],
     
         arriveDepart: 

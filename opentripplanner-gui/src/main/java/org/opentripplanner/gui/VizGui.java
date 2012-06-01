@@ -13,8 +13,6 @@
 
 package org.opentripplanner.gui;
 
-import static org.opentripplanner.common.IterableLibrary.filter;
-
 import java.awt.BorderLayout;
 import java.awt.Container;
 import java.awt.Dimension;
@@ -56,37 +54,33 @@ import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.ListModel;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 
 import org.onebusaway.gtfs.model.Trip;
-import org.opentripplanner.routing.algorithm.strategies.BidirectionalRemainingWeightHeuristic;
-import org.opentripplanner.routing.algorithm.strategies.RemainingWeightHeuristic;
-import org.opentripplanner.routing.algorithm.strategies.TrivialRemainingWeightHeuristic;
-import org.opentripplanner.routing.core.DirectEdge;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
+import org.opentripplanner.routing.algorithm.GenericAStar;
 import org.opentripplanner.routing.core.OptimizeType;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.TraverseModeSet;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation;
 import org.opentripplanner.routing.edgetype.PatternAlight;
 import org.opentripplanner.routing.edgetype.PatternBoard;
 import org.opentripplanner.routing.edgetype.PlainStreetEdge;
-import org.opentripplanner.routing.edgetype.StreetEdge;
-import org.opentripplanner.routing.edgetype.TripPattern;
+import org.opentripplanner.routing.edgetype.TableTripPattern;
 import org.opentripplanner.routing.edgetype.TurnEdge;
-import org.opentripplanner.routing.impl.ContractionPathServiceImpl;
-import org.opentripplanner.routing.impl.ContractionRoutingServiceImpl;
-import org.opentripplanner.routing.impl.DefaultRemainingWeightHeuristicFactoryImpl;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
+import org.opentripplanner.routing.impl.RetryingPathServiceImpl;
 import org.opentripplanner.routing.impl.GraphServiceImpl;
-import org.opentripplanner.routing.impl.StreetVertexIndexServiceImpl;
-import org.opentripplanner.routing.services.RemainingWeightHeuristicFactory;
+import org.opentripplanner.routing.services.SPTService;
+import org.opentripplanner.routing.services.StreetVertexIndexService;
 import org.opentripplanner.routing.spt.GraphPath;
 
 import com.vividsolutions.jts.geom.Coordinate;
+import com.vividsolutions.jts.geom.Envelope;
 
 /**
  * Exit on window close.
@@ -152,7 +146,7 @@ class TripPatternListModel extends AbstractListModel {
 
     ArrayList<String> departureTimes = new ArrayList<String>();
 
-    public TripPatternListModel(TripPattern pattern, int stopIndex) {
+    public TripPatternListModel(TableTripPattern pattern, int stopIndex) {
     	Iterator<Integer> departureTimeIterator = pattern.getDepartureTimes(stopIndex);
     	while (departureTimeIterator.hasNext()) {
     	    int dt = departureTimeIterator.next();
@@ -207,7 +201,7 @@ class VertexList extends AbstractListModel {
  * bunch of weird buttons designed to debug specific cases.
  * 
  */
-public class VizGui extends JFrame implements VertexSelectionListener, RemainingWeightHeuristicFactory {
+public class VizGui extends JFrame implements VertexSelectionListener {
 
     private static final long serialVersionUID = 1L;
 
@@ -245,15 +239,23 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
 
     private JList departurePattern;
 
+    private DefaultListModel annotationMatchesModel;
+
+    private JList annotationMatches;
+
     private JLabel serviceIdLabel;
 
-    private ContractionPathServiceImpl pathservice;
+    private RetryingPathServiceImpl pathservice = new RetryingPathServiceImpl();
 
     private Graph graph;
 
-    private StreetVertexIndexServiceImpl indexService;
+    private GraphServiceImpl graphservice = new GraphServiceImpl() {
+        public Graph getGraph(String routerId) { return graph; }
+    };
 
-    private ContractionRoutingServiceImpl routingService;
+    private StreetVertexIndexService indexService;
+
+    private SPTService sptService = new GenericAStar();
 
     private DefaultListModel metadataModel;
 
@@ -265,17 +267,23 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
 
     private HashSet<Vertex> seen;
 
+    private JList metadataList;
+
     public VizGui(String graphName) {
         super();
- 
-        GraphServiceImpl graphService = new GraphServiceImpl();
-        graphService.setGraphPath(new File(graphName));
-        graphService.refreshGraph();
-            
-        setGraph(graphService);
-        
+        File path = new File(graphName);
+        if (path.getName().equals("Graph.obj")) {
+            path = path.getParentFile();
+        }
+        try {
+            graph = Graph.load(new File(graphName), Graph.LoadLevel.FULL);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        indexService = graph.streetIndex;
+        pathservice.graphService = graphservice;
+        pathservice.sptService   = sptService;
         setTitle("VizGui: " + graphName);
-
         init();
     }
     
@@ -413,7 +421,7 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
             public void valueChanged(ListSelectionEvent e) {
 
                 JList edgeList = (JList) e.getSource();
-                DirectEdge selected = (DirectEdge) edgeList.getSelectedValue();
+                Edge selected = (Edge) edgeList.getSelectedValue();
                 if (selected == null) {
                     departurePattern.removeAll();
                     return;
@@ -423,19 +431,19 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
                 /* for turns, highlight the outgoing street's ends */
                 if (selected instanceof TurnEdge || selected instanceof PlainStreetEdge) {
                     List<Vertex> vertices = new ArrayList<Vertex>();
-                    List<DirectEdge> edges = new ArrayList<DirectEdge>();
+                    List<Edge> edges = new ArrayList<Edge>();
                     Vertex tov = selected.getToVertex();
-                    for (Edge og : graph.getOutgoing(tov)) {
+                    for (Edge og : tov.getOutgoing()) {
                     	if (og instanceof TurnEdge || og instanceof PlainStreetEdge) {
-                    		edges.add((DirectEdge)og);
-                            vertices.add (((StreetEdge)og).getToVertex());
+                    		edges.add(og);
+                            vertices.add (og.getToVertex());
                             break;
                         }
                     }
                     Vertex fromv = selected.getFromVertex();
-                    for (Edge ic : graph.getIncoming(fromv)) {
+                    for (Edge ic : fromv.getIncoming()) {
                         if (ic instanceof TurnEdge || ic instanceof PlainStreetEdge) {
-                    		edges.add((DirectEdge)ic);
+                    		edges.add(ic);
                             vertices.add (ic.getFromVertex());
                             break;
                         }
@@ -477,6 +485,7 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
                         }
                         field.setAccessible(true);
                         String name = field.getName();
+
                         String value = "(unknown -- see console for stack trace)";
                         try {
                             value = "" + field.get(selected);
@@ -503,6 +512,9 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
                     }
                     field.setAccessible(true);
                     String name = field.getName();
+                    if (name.equals("incoming") || name.equals("outgoing")) {
+                        continue;
+                    }
                     String value = "(unknown -- see console for stack trace)";
                     try {
                         value = "" + field.get(fromv);
@@ -515,9 +527,10 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
                 }
                 c = c.getSuperclass();
                 }
-
+                metadataList.revalidate();
+                
                 // figure out the pattern, if any
-                TripPattern pattern = null;
+                TableTripPattern pattern = null;
                 int stopIndex = 0;
                 if (selected instanceof PatternBoard) {
                     PatternBoard boardEdge = (PatternBoard) selected;
@@ -550,8 +563,8 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
                 if (selected != null) {
                     Vertex nowSelected = selected.vertex;
                     showGraph.highlightVertex(nowSelected);
-                    outgoingEdges.setModel(new EdgeListModel(graph.getOutgoing(nowSelected)));
-                    incomingEdges.setModel(new EdgeListModel(graph.getIncoming(nowSelected)));
+                    outgoingEdges.setModel(new EdgeListModel(nowSelected.getOutgoing()));
+                    incomingEdges.setModel(new EdgeListModel(nowSelected.getIncoming()));
                 }
             }
         });
@@ -647,12 +660,12 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
             public void actionPerformed(ActionEvent e) {
                 String edgeName = (String) JOptionPane.showInputDialog(frame, "Edge name like",
                         JOptionPane.PLAIN_MESSAGE);
-                for (GraphVertex gv : getGraph().getVertices()) {
-                	for (DirectEdge edge : filter(gv.getOutgoing(),DirectEdge.class)) {
+                for (Vertex gv : getGraph().getVertices()) {
+                	for (Edge edge : gv.getOutgoing()) {
                         if (edge.getName() != null && edge.getName().contains(edgeName)) {
-                            showGraph.highlightVertex(gv.vertex);
+                            showGraph.highlightVertex(gv);
                             ArrayList<Vertex> l = new ArrayList<Vertex>();
-                            l.add(gv.vertex);
+                            l.add(gv);
                             verticesSelected(l);
                         }
                     }
@@ -677,28 +690,65 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
         });
         buttonPanel.add(traceButton);
 
+        // annotation search button
+        JButton annotationButton = new JButton("Find annotations");
+        annotationButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                findAnnotation();
+            }
+        });
+        buttonPanel.add(annotationButton);
+                    
         /* right panel holds trip pattern and stop metadata */
         JPanel rightPanel = new JPanel();
         rightPanel.setLayout(new BorderLayout());
         pane.add(rightPanel, BorderLayout.LINE_END);
-        
+
         JTabbedPane rightPanelTabs = new JTabbedPane();
-        rightPanel.add(rightPanelTabs, BorderLayout.CENTER);
+
+        rightPanel.add(rightPanelTabs, BorderLayout.LINE_END);
         serviceIdLabel = new JLabel("[service id]");
         rightPanel.add(serviceIdLabel, BorderLayout.PAGE_END);
         
         departurePattern = new JList();
-        departurePattern.setPrototypeCellValue("Bite the wax tadpole right on the nose");
         JScrollPane dpScrollPane = new JScrollPane(departurePattern);
         rightPanelTabs.addTab("trip pattern", dpScrollPane);
 
-        JList metadataList = new JList();
+        metadataList = new JList();
         metadataModel = new DefaultListModel();
         metadataList.setModel(metadataModel);
-        metadataList.setPrototypeCellValue("bicycleSafetyEffectiveLength : 10.42468803");
         JScrollPane mdScrollPane = new JScrollPane(metadataList);
+        mdScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_ALWAYS);
         rightPanelTabs.addTab("metadata", mdScrollPane);
 
+        // This is where matched annotations from a search go
+        annotationMatches = new JList();
+        annotationMatches.addListSelectionListener(new ListSelectionListener () {
+            public void valueChanged(ListSelectionEvent e) {
+                JList theList = (JList) e.getSource();
+                SelectableGraphBuilderAnnotation anno = 
+                    (SelectableGraphBuilderAnnotation) theList.getSelectedValue();
+
+                if (anno == null) return;
+
+                anno.select(showGraph);
+            }
+        });    
+
+        annotationMatchesModel = new DefaultListModel();
+        annotationMatches.setModel(annotationMatchesModel);
+        JScrollPane amScrollPane = new JScrollPane(annotationMatches);
+        amScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_ALWAYS);
+        rightPanelTabs.addTab("annotations", amScrollPane);
+
+        Dimension size = new Dimension(200, 1600);
+
+        amScrollPane.setMaximumSize(size);
+        amScrollPane.setPreferredSize(size);
+        mdScrollPane.setMaximumSize(size);
+        mdScrollPane.setPreferredSize(size);
+        rightPanelTabs.setMaximumSize(size);
+        rightPanel.setMaximumSize(size);
 
         showGraph.init();
         addWindowListener(new ExitListener());
@@ -722,7 +772,7 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
         HashSet<Vertex> newOpen = new HashSet<Vertex>();
         for (Vertex v2 : open) {
             closed.add(v2);
-            for (DirectEdge e: filter(graph.getOutgoing(v2),DirectEdge.class)) {
+            for (Edge e: v2.getOutgoing()) {
                 Vertex target = e.getToVertex();
                 if (closed.contains(target)) {
                     continue;
@@ -749,7 +799,7 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
         seenVertices.add(v);
         while (!toExplore.isEmpty()) {
             Vertex src = toExplore.poll();
-            for (DirectEdge e : filter(graph.getOutgoing(src),DirectEdge.class)) {
+            for (Edge e : src.getOutgoing()) {
                 Vertex tov = e.getToVertex();
                 if (!seenVertices.contains(tov)) {
                     seenVertices.add(tov);
@@ -763,15 +813,15 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
     protected void checkGraph() {
         
         HashSet<Vertex> seenVertices = new HashSet<Vertex>();
-        Collection<GraphVertex> allVertices = getGraph().getVertices();
-        Vertex v = allVertices.iterator().next().vertex;
+        Collection<Vertex> allVertices = getGraph().getVertices();
+        Vertex v = allVertices.iterator().next();
         System.out.println ("initial vertex: " + v);
         Queue<Vertex> toExplore = new LinkedList<Vertex>();
         toExplore.add(v);
         seenVertices.add(v);
         while (!toExplore.isEmpty()) {
             Vertex src = toExplore.poll();
-            for (DirectEdge e : filter(graph.getOutgoing(src),DirectEdge.class)) {
+            for (Edge e : src.getOutgoing()) {
                 Vertex tov = e.getToVertex();
                 if (!seenVertices.contains(tov)) {
                     seenVertices.add(tov);
@@ -783,8 +833,8 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
         System.out.println("After investigation, visited " + seenVertices.size() + " of " + allVertices.size());
         
         /*now, let's find an unvisited vertex */
-        for (GraphVertex u : allVertices) {
-            if (!seenVertices.contains(u.vertex)) {
+        for (Vertex u : allVertices) {
+            if (!seenVertices.contains(u)) {
                 System.out.println ("unvisited vertex" + u);
                 break;
             }
@@ -811,20 +861,23 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
         // otherwise 'false' will clear trainish and busish 
         if (transitCheckBox.isSelected())
             modeSet.setTransit(true);
-    	TraverseOptions options = new TraverseOptions(modeSet);
+    	RoutingRequest options = new RoutingRequest(modeSet);
     	VisualTraverseVisitor visitor = new VisualTraverseVisitor(showGraph);
-    	options.aStarSearchFactory = visitor.getAStarSearchFactory();
-    	options.boardCost = Integer.parseInt(boardingPenaltyField.getText()) * 60; // override low 2-4 minute values
+    	options.setWalkBoardCost(Integer.parseInt(boardingPenaltyField.getText()) * 60); // override low 2-4 minute values
+    	// TODO LG Add ui element for bike board cost (for now bike = 2 * walk)
+    	options.setBikeBoardCost(Integer.parseInt(boardingPenaltyField.getText()) * 60 * 2);
     	// there should be a ui element for walk distance and optimize type
     	options.setOptimize(OptimizeType.QUICK);
         options.setMaxWalkDistance(Double.MAX_VALUE);
-
+        options.from = from;
+        options.to   = to;
+        //options.remainingWeightHeuristic = new BidirectionalRemainingWeightHeuristic(graph);
         System.out.println("--------");
         System.out.println("Path from " + from + " to " + to + " at " + when);
         System.out.println("\tModes: " + modeSet);
         System.out.println("\tOptions: " + options);
-
-    	List<GraphPath> paths = pathservice.plan(from, to, when, options, 1);
+        // TODO: check options properly intialized (AMB)
+        List<GraphPath> paths = pathservice.getPaths(options);
         if (paths == null) {
             System.out.println("no path");
             showGraph.highlightGraphPath(null);
@@ -836,6 +889,105 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
             System.out.println(s.getBackEdgeNarrative());
         }
         showGraph.highlightGraphPath(gp);
+    }
+
+    /** this class makes a GraphBuilderAnnotation selectable in VizGui. It also adds a new
+     * toString method that makes more sense in the app.
+     * @author mattwigway
+     */
+    private static class SelectableGraphBuilderAnnotation extends GraphBuilderAnnotation {
+        // doesn't much matter, this class is generated by casting anyhow
+        public SelectableGraphBuilderAnnotation(GraphBuilderAnnotation.Variety variety, 
+                                                Object... refs) {
+            super(variety, refs);
+        }
+
+        @Override
+        public String toString () {
+            return getVariety().toString() + " at " + getReferencedObjects();
+        }
+
+        public void select (ShowGraph show) {
+            Envelope env = new Envelope();
+
+            // I think they will always have the same SRID, no reprojection needed
+            // TODO: handle geometries.
+            boolean found = false;
+            
+            // For highlighting
+            ArrayList<Vertex> vertices = new ArrayList<Vertex>();
+
+            for (Object obj : getReferencedObjects()) {
+                if (obj instanceof Edge) {
+                    found = true;
+                    Edge e = (Edge) obj;
+                    show.enqueueHighlightedEdge(e);
+                    env.expandToInclude(e.getFromVertex().getCoordinate());
+                    env.expandToInclude(e.getToVertex().getCoordinate());
+                }
+                else if (obj instanceof Vertex) {
+                    found = true;
+                    Vertex v = (Vertex) obj;
+                    env.expandToInclude(v.getCoordinate());
+                    vertices.add(v);
+                }
+            }
+
+            // nothing associated
+            if (!found) return;
+
+            // make it a little bigger, especially needed for STOP_UNLINKED
+            env.expandBy(0.02);
+
+            // highlight relevant things
+            show.clearHighlights();
+            show.setHighlightedVertices(vertices);
+
+            // zoom the graph display
+            show.zoomToEnvelope(env);
+            
+            // and draw
+            show.draw();
+        }
+    }
+                
+
+    protected void findAnnotation () {
+        Object[] options = GraphBuilderAnnotation.Variety.values();
+
+        GraphBuilderAnnotation.Variety variety = 
+            (GraphBuilderAnnotation.Variety) JOptionPane.showInputDialog(
+                null, // parentComponent; TODO: set correctly
+                "Select the type of annotation to find", // question
+                "Select annotation", // title
+                JOptionPane.QUESTION_MESSAGE, // message type
+                null, // no icon
+                options, // options (built above)
+                GraphBuilderAnnotation.Variety.STOP_UNLINKED // default value
+            );
+        
+        // User clicked cancel
+        if (variety == null) return;
+
+        annotationMatchesModel.clear();
+
+        // loop over the annotations and save the ones of the requested type
+        for (GraphBuilderAnnotation anno : graph.getBuilderAnnotations()) {
+            if (anno.getVariety() == variety) {
+                annotationMatchesModel.addElement(
+                    // TODO: is there a polymorphic way to do this?
+                    new SelectableGraphBuilderAnnotation(
+                        anno.getVariety(),
+                        anno.getReferencedObjects().toArray()
+                    )
+                );
+            }
+        }
+
+        System.out.println("Found " + annotationMatchesModel.getSize() + " annotations of type " + 
+                           variety);
+       
+                                                                 
     }
 
     public static void main(String args[]) {
@@ -855,33 +1007,8 @@ public class VizGui extends JFrame implements VertexSelectionListener, Remaining
         nearbyVertices.setModel(data);
     }
     
-    public void setGraph(GraphServiceImpl graphService) {
-        
-        graph = graphService.getGraph();
-
-        pathservice = new ContractionPathServiceImpl();
-        pathservice.setGraphService(graphService);
-        pathservice.setRemainingWeightHeuristicFactory(
-                new DefaultRemainingWeightHeuristicFactoryImpl());
-        indexService = new StreetVertexIndexServiceImpl();
-        indexService.setGraphService(graphService);
-        indexService.setup();
-        pathservice.setIndexService(indexService);
-        routingService = new ContractionRoutingServiceImpl();
-        routingService.setGraphService(graphService);
-        pathservice.setRoutingService(routingService);
-        pathservice.setRemainingWeightHeuristicFactory(this);
-    }
-    
     public Graph getGraph() {
         return graph;
     }
 
-    @Override
-    // the vizgui serves as its own remainingweightheuristicfactory
-    // so ui elements could be used to select the heuristic
-    public RemainingWeightHeuristic getInstanceForSearch(TraverseOptions opt, Vertex target) {
-        return new BidirectionalRemainingWeightHeuristic(graph);
-        //return new DefaultRemainingWeightHeuristic();
-    }
 }

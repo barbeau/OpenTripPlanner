@@ -15,13 +15,12 @@ package org.opentripplanner.routing.edgetype;
 
 import org.onebusaway.gtfs.model.Trip;
 import org.opentripplanner.common.geometry.PackedCoordinateSequence;
-import org.opentripplanner.routing.core.AbstractEdge;
-import org.opentripplanner.routing.core.EdgeNarrative;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.vertextype.StreetVertex;
+import org.opentripplanner.routing.vertextype.TurnVertex;
 
 import com.vividsolutions.jts.geom.Geometry;
 
@@ -29,23 +28,30 @@ import com.vividsolutions.jts.geom.Geometry;
  * An edge from the main edge-based street network out to an intersection vertex
  *
  */
-public class OutEdge extends AbstractEdge implements EdgeWithElevation, StreetEdge {
+public class OutEdge extends StreetEdge {
 
     private static final long serialVersionUID = -4922790993642455605L;
 
+    /**
+     * No-arg constructor used only for customization -- do not call this unless you know what you
+     * are doing
+     */
+    public OutEdge() {
+        super(null, null);
+    }
 
-    public OutEdge(StreetVertex fromv, Vertex tov) {
+    public OutEdge(TurnVertex fromv, StreetVertex tov) {
         super(fromv, tov);
     }
 
     @Override
     public double getDistance() {
-        return ((StreetVertex)getFromVertex()).getLength();
+        return ((TurnVertex) getFromVertex()).getLength();
     }
 
     @Override
     public Geometry getGeometry() {
-        return ((StreetVertex)fromv).getGeometry();
+        return ((TurnVertex) fromv).getGeometry();
     }
 
     @Override
@@ -55,7 +61,7 @@ public class OutEdge extends AbstractEdge implements EdgeWithElevation, StreetEd
 
     @Override
     public String getName() {
-        return fromv.getName();
+        return ((TurnVertex) fromv).getName();
     }
 
     @Override
@@ -64,26 +70,29 @@ public class OutEdge extends AbstractEdge implements EdgeWithElevation, StreetEd
     }
 
     public State traverse(State s0) {
-    	return doTraverse(s0, s0.getOptions());
+        return doTraverse(s0, s0.getOptions());
     }
 
-    private State doTraverse(State s0, TraverseOptions options) {
-        StreetVertex fromv = ((StreetVertex)this.fromv);
-        
-        if (!fromv.canTraverse(options)) {
-        	// try walking bike since you can't ride it here
-        	if (options.getModes().contains(TraverseMode.BICYCLE)) {
-        		return doTraverse(s0, options.getWalkingOptions());
-        	} else {
-        		return null;
-        	}
+    private State doTraverse(State s0, RoutingRequest options) {
+        TurnVertex fromv = ((TurnVertex) this.fromv);
+        TraverseMode traverseMode = s0.getNonTransitMode(options);
+        if (!fromv.canTraverse(options, traverseMode)) {
+            // try walking bike since you can't ride it here
+            if (traverseMode == TraverseMode.BICYCLE) {
+                return doTraverse(s0, options.getWalkingOptions());
+            } else {
+                return null;
+            }
         }
 
-        TraverseMode traverseMode = options.getModes().getNonTransitMode();
-        EdgeNarrative en = new FixedModeEdge(this, traverseMode);
+        FixedModeEdge en = new FixedModeEdge(this, traverseMode);
+        if (fromv.getWheelchairNotes() != null && options.wheelchairAccessible) {
+            en.addNotes(fromv.getWheelchairNotes());
+        }
         StateEditor s1 = s0.edit(this, en);
 
-        double time = fromv.getEffectiveLength(traverseMode) / options.speed;
+        double speed = options.getSpeed(traverseMode);
+        double time = fromv.getEffectiveLength(traverseMode) / speed;
         double weight = fromv.computeWeight(s0, options, time);
         s1.incrementWalkDistance(fromv.getLength());
         s1.incrementTimeInSeconds((int) time);
@@ -99,40 +108,36 @@ public class OutEdge extends AbstractEdge implements EdgeWithElevation, StreetEd
     }
 
     public PackedCoordinateSequence getElevationProfile() {
-        return ((StreetVertex) fromv).getElevationProfile();
+        return ((TurnVertex) fromv).getElevationProfile();
     }
 
-    public boolean canTraverse(TraverseOptions options) {
-        return ((StreetVertex) fromv).canTraverse(options);
+    @Override
+    public boolean canTraverse(RoutingRequest options) {
+        return ((TurnVertex) fromv).canTraverse(options);
     }
+
     @Override
     public double getLength() {
-        return ((StreetVertex) fromv).getLength();
+        return ((TurnVertex) fromv).getLength();
     }
+
     @Override
     public PackedCoordinateSequence getElevationProfile(double start, double end) {
-        return ((StreetVertex) fromv).getElevationProfile(start, end);
+        return ((TurnVertex) fromv).getElevationProfile(start, end);
     }
+
     @Override
     public StreetTraversalPermission getPermission() {
-        return ((StreetVertex) fromv).getPermission();
+        return ((TurnVertex) fromv).getPermission();
     }
 
     @Override
-    public void setElevationProfile(PackedCoordinateSequence elev) {
-        ((StreetVertex)fromv).setElevationProfile(elev);
-    }
-    
-    public boolean equals(Object o) {
-        if (o instanceof OutEdge) {
-            OutEdge other = (OutEdge) o;
-            return other.fromv.equals(fromv) && other.tov.equals(tov);
-        }
-        return false;
+    public boolean setElevationProfile(PackedCoordinateSequence elev, boolean computed) {
+        return ((TurnVertex) fromv).setElevationProfile(elev, computed);
     }
 
-	@Override
-	public boolean isNoThruTraffic() {
-		return ((StreetVertex) fromv).isNoThruTraffic();
-	}
+    @Override
+    public boolean isNoThruTraffic() {
+        return ((TurnVertex) fromv).isNoThruTraffic();
+    }
 }

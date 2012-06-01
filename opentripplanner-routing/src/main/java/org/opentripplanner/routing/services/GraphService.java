@@ -13,9 +13,12 @@
 
 package org.opentripplanner.routing.services;
 
+import java.util.Collection;
+
 import org.onebusaway.gtfs.services.calendar.CalendarService;
 import org.opentripplanner.routing.contraction.ContractionHierarchySet;
-import org.opentripplanner.routing.core.Graph;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Graph.LoadLevel;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
@@ -37,28 +40,18 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public interface GraphService {
 
-	/**
-	 * Refresh the graph. Depending on the underlying implementation, this may
-	 * involve reloading the graph from a file.
-	 */
-	public void refreshGraph();
+    /** specify whether additional debug information is loaded from the serialized graphs */
+    public void setLoadLevel(LoadLevel level);
+    
+    /** Refresh all known graphs. This will usually involve reloading the graph from a file. */
+    public void refreshGraphs();
 
-	/**
-	 * 
-	 * @return the current graph object
-	 */
-	public Graph getGraph();
+    /** @return the current default graph object */
+    public Graph getGraph();
 
-	/**
-	 * 
-	 * @return the current contraction hiearachy set object
-	 */
-	public ContractionHierarchySet getContractionHierarchySet();
+    /** @return the default graph object for the given router ID */
+    public Graph getGraph(String routerId);
 
-	/**
-	 * 
-	 * @return the current calendar service instance, or null if no calendar
-	 *         data is loaded
-	 */
-	public CalendarService getCalendarService();
+    public Collection<String> getGraphIds();
+
 }

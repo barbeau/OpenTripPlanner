@@ -16,21 +16,47 @@ package org.opentripplanner.routing.services;
 import java.util.Collection;
 import java.util.List;
 
+import org.onebusaway.gtfs.model.Agency;
 import org.onebusaway.gtfs.model.AgencyAndId;
-import org.opentripplanner.routing.core.Edge;
+import org.onebusaway.gtfs.model.ServiceCalendar;
+import org.onebusaway.gtfs.model.ServiceCalendarDate;
 import org.opentripplanner.routing.core.TraverseMode;
+import org.opentripplanner.routing.edgetype.PreAlightEdge;
+import org.opentripplanner.routing.edgetype.PreBoardEdge;
 import org.opentripplanner.routing.transit_index.RouteVariant;
 
+import com.vividsolutions.jts.geom.Coordinate;
+
 public interface TransitIndexService {
-	public List<RouteVariant> getVariantsForRoute(AgencyAndId route);
-	
-	public RouteVariant getVariantForTrip(AgencyAndId trip);
+    public List<RouteVariant> getVariantsForAgency(String agency);
 
-	public Edge getPreboardEdge(AgencyAndId stop);
+    public List<RouteVariant> getVariantsForRoute(AgencyAndId route);
 
-	public Edge getPrealightEdge(AgencyAndId stop);
+    public RouteVariant getVariantForTrip(AgencyAndId trip);
 
-	public Collection<String> getDirectionsForRoute(AgencyAndId route);
+    public PreBoardEdge getPreBoardEdge(AgencyAndId stop);
 
-	public List<TraverseMode> getAllModes();
+    public PreAlightEdge getPreAlightEdge(AgencyAndId stop);
+
+    public List<AgencyAndId> getRoutesForStop(AgencyAndId stop);
+
+    public Collection<String> getDirectionsForRoute(AgencyAndId route);
+
+    public List<TraverseMode> getAllModes();
+
+    public Collection<AgencyAndId> getAllRouteIds();
+
+    public void addCalendars(Collection<ServiceCalendar> allCalendars);
+
+    public void addCalendarDates(Collection<ServiceCalendarDate> allDates);
+
+    public List<String> getAllAgencies();
+
+    public List<ServiceCalendarDate> getCalendarDatesByAgency(String agency);
+
+    public List<ServiceCalendar> getCalendarsByAgency(String agency);
+
+    public Agency getAgency(String id);
+
+    public Coordinate getCenter();
 }

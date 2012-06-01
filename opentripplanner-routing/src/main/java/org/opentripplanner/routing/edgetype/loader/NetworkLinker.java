@@ -14,14 +14,21 @@
 package org.opentripplanner.routing.edgetype.loader;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
-import org.opentripplanner.routing.core.TransitStop;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.edgetype.PathwayEdge;
+import org.opentripplanner.common.IterableLibrary;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation.Variety;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.core.TraverseMode;
+import org.opentripplanner.routing.edgetype.StreetEdge;
 import org.opentripplanner.routing.edgetype.factory.FindMaxWalkDistances;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
+import org.opentripplanner.routing.vertextype.BikeRentalStationVertex;
+import org.opentripplanner.routing.vertextype.TransitStop;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,9 +40,15 @@ public class NetworkLinker {
 
     private NetworkLinkerLibrary networkLinkerLibrary;
 
-    public NetworkLinker(Graph graph) {
+    public NetworkLinker(Graph graph, HashMap<Class<?>,Object> extra) {
         this.graph = graph;
-        this.networkLinkerLibrary = new NetworkLinkerLibrary(graph);
+        this.networkLinkerLibrary = new NetworkLinkerLibrary(graph, extra);
+        networkLinkerLibrary.options = new RoutingRequest(TraverseMode.BICYCLE);
+    }
+
+    public NetworkLinker(Graph graph) {
+        // we should be using Collections.emptyMap(), but it breaks Java's broken-ass type checker
+        this(graph, new HashMap<Class<?>, Object>());
     }
 
     /**
@@ -47,43 +60,39 @@ public class NetworkLinker {
     public void createLinkage() {
 
         _log.debug("creating linkages...");
-        int i = 0;
-        ArrayList<GraphVertex> vertices = new ArrayList<GraphVertex>(graph.getVertices());
+        // iterate over a copy of vertex list because it will be modified
+        ArrayList<Vertex> vertices = new ArrayList<Vertex>();
+        vertices.addAll(graph.getVertices());
 
-        for (GraphVertex gv : vertices) {
-            Vertex v = gv.vertex;
-            if (i % 10000 == 0)
-                _log.debug("vertices=" + i + "/" + vertices.size());
-            i++;
-
-            if (v instanceof TransitStop) {
-                // only connect transit stops that (a) are entrances, or (b) have no associated
-                // entrances
-                TransitStop ts = (TransitStop) v;
-                if (!ts.isEntrance()) {
-                    boolean hasEntrance = false;
-
-                    for (Edge e : gv.getOutgoing()) {
-                        if (e instanceof PathwayEdge) {
-                            hasEntrance = true;
-                            break;
-                        }
-                    }
-                    if (hasEntrance) {
-                        // transit stop has entrances
-                        continue;
-                    }
-                }
-
+        for (TransitStop ts : IterableLibrary.filter(vertices, TransitStop.class)) {
+            // only connect transit stops that (a) are entrances, or (b) have no associated
+            // entrances
+            if (ts.isEntrance() || !ts.hasEntrances()) {
                 boolean wheelchairAccessible = ts.hasWheelchairEntrance();
-                if (!networkLinkerLibrary.connectVertexToStreets(v, wheelchairAccessible)) {
-                    _log.warn("Stop " + ts + " not near any streets; it will not be usable");
+                if (!networkLinkerLibrary.connectVertexToStreets(ts, wheelchairAccessible).getResult()) {
+                    _log.warn(GraphBuilderAnnotation.register(graph, Variety.STOP_UNLINKED, ts));
                 }
             }
         }
-
-        networkLinkerLibrary.addAllReplacementEdgesToGraph();
+        //remove replaced edges
+        for (HashSet<StreetEdge> toRemove : networkLinkerLibrary.replacements.keySet()) {
+            for (StreetEdge edge : toRemove) {
+                edge.getFromVertex().removeOutgoing(edge);
+                edge.getToVertex().removeIncoming(edge);
+            }
+        }
+        
+        // Do we really need this? Commenting out does seem to cause some slowdown. (AMB)
         networkLinkerLibrary.markLocalStops();
         FindMaxWalkDistances.find(graph);
+        
+        _log.debug("Linking bike rental stations...");
+        for (BikeRentalStationVertex brsv : IterableLibrary.filter(vertices,
+                BikeRentalStationVertex.class)) {
+            if (!networkLinkerLibrary.connectVertexToStreets(brsv).getResult()) {
+                _log.warn(GraphBuilderAnnotation.register(graph,
+                        Variety.BIKE_RENTAL_STATION_UNLINKED, brsv));
+            }
+        }
     }
 }

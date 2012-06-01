@@ -17,7 +17,6 @@ otp.namespace("otp.locale");
 /**
   * @class
   */
-
 otp.locale.English = {
 
     config :
@@ -34,12 +33,26 @@ otp.locale.English = {
     {
         fromHere         : "Start a trip here",
         toHere           : "End a trip here",
+        intermediateHere : "Add intermediate point",
 
         centerHere       : "Center map here",
         zoomInHere       : "Zoom in",
         zoomOutHere      : "Zoom out",
         previous         : "Last map position",
         next             : "Next map position"
+    },
+
+    // TODO Localize Me
+    bikeTriangle : 
+    {
+        safeName : "Bike friendly",
+        safeSym  : "B",
+
+        hillName : "Flat",
+        hillSym  : "F",
+
+        timeName : "Quick",
+        timeSym  : "Q"
     },
 
     service : 
@@ -88,7 +101,9 @@ otp.locale.English = {
         ok           : "OK",
         cancel       : "Cancel",
         yes          : "Yes",
-        no           : "No"
+        no           : "No",
+        showDetails  : "&darr; Show details &darr;",
+        hideDetails  : "&uarr; Hide details &uarr;"
     },
 
     // note: keep these lower case (and uppercase via template / code if needed)
@@ -117,7 +132,10 @@ otp.locale.English = {
         to:             "to",
         via:            "via",
         circle_counterclockwise: "take roundabout counterclockwise",
-        circle_clockwise:        "take roundabout clockwise"
+        circle_clockwise:        "take roundabout clockwise",
+        // rather than just being a direction, this should be
+        // full-fledged to take just the exit name at the end
+        elevator: "take elevator to"
     },
 
     // see otp.planner.Templates for use
@@ -151,6 +169,8 @@ otp.locale.English = {
     // see otp.planner.Templates for use
     labels : 
     {
+        agency_msg   : "Service run by",
+        agency_msg_tt: "Open agency website in separate window...",
         about        : "About",
         stop_id      : "Stop ID",
         trip_details : "Trip details",
@@ -202,6 +222,8 @@ otp.locale.English = {
         second_abbrev  : "sec",
         seconds_abbrev : "secs",
         format         : "F jS, Y @ g:ia",
+        date_format    : "n/j/Y",
+        time_format    : "g:i a",
         months         : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     },
 
@@ -231,6 +253,7 @@ otp.locale.English = {
             fromHere      : "From here",
             to            : "To",
             toHere        : "To here",
+            intermediate  : "Intermediate Places",
             minimize      : "Show me the",
             maxWalkDistance: "Maximum walk",
             maxBikeDistance: "Maximum bike",
@@ -274,7 +297,7 @@ otp.locale.English = {
             geoToMsg     : "Please select the 'To' location for your trip: "
         },
         
-        // default messages from server if a message was not returned
+        // default messages from server if a message was not returned ... 'Place' error messages also used when trying to submit without From & To coords.
         msgcodes:
         {
             200: "Plan OK",
@@ -284,21 +307,21 @@ otp.locale.English = {
             406: "No transit times",
             408: "Request timed out",
             413: "Invalid parameter",
-            440: "From geocode not found",
-            450: "To geocode not found",
-            460: "Geocode from and to not found",
-            470: "From or to not wheelchair accessible",
+            440: "The 'From' place is not found ... please re-enter it.",
+            450: "The 'To' place is not found ... please re-enter it.",
+            460: "Places 'From' and 'To' are not found ... please re-enter them.",
+            470: "Places 'From' or 'To' are not wheelchair accessible",
             409: "Too close",
-            340: "Geocode from ambiguous",
-            350: "Geocode to ambiguous",
-            360: "Geocode from and to ambiguous"
+            340: "Geocode 'From' ambiguous",
+            350: "Geocode 'To' ambiguous",
+            360: "Geocodes 'From' and 'To' are ambiguous"
         },
 
         options: 
         [
           ['TRANSFERS', 'Fewest transfers'],
-          ['QUICK',     'Quickest trip'],
-          ['SAFE',      'Safest trip'],
+          ['QUICK',     'Quick trip'],
+          ['SAFE',      'Bike friendly trip'],
           ['TRIANGLE',  'Custom trip...']
         ],
     
@@ -327,17 +350,30 @@ otp.locale.English = {
             ['80467',  '50 miles'],
             ['160934',  '100 miles']
         ],
-    
+
         mode : 
         [
             ['TRANSIT,WALK', 'Transit'],
-// DO WE REALLY NEED THIS?  ISN'T BUS & TRAIN the same as TRANSIT, WALK
-//          ['BUSISH,TRAINISH,WALK', 'Bus & Train'],
             ['BUSISH,WALK', 'Bus only'],
             ['TRAINISH,WALK', 'Train only'],
             ['WALK', 'Walk only'],
             ['BICYCLE', 'Bicycle'],
             ['TRANSIT,BICYCLE', 'Transit & Bicycle']
+        ],
+
+        // TODO: remove this hack, and provide code that allows the mode array to be configured with different transit modes.
+        //       (note that we've been broken for awhile here, since many agencies don't have a 'Train' mode either...this needs attention)
+        // IDEA: maybe we start with a big array (like below), and the pull out modes from this array when turning off various modes...
+        with_bikeshare_mode : 
+        [
+            ['TRANSIT,WALK', 'Transit'],
+            ['BUSISH,WALK', 'Bus only'],
+            ['TRAINISH,WALK', 'Train only'],
+            ['WALK', 'Walk only'],
+            ['BICYCLE', 'Bicycle'],
+            ['WALK,BICYCLE', 'Rented Bicycle'],
+            ['TRANSIT,BICYCLE', 'Transit & Bicycle'],
+            ['TRANSIT,WALK,BICYCLE', 'Transit & Rented Bicycle']
         ],
 
         wheelchair :
@@ -349,3 +385,4 @@ otp.locale.English = {
 
     CLASS_NAME : "otp.locale.English"
 };
+

@@ -23,7 +23,7 @@ otp.locale.French = {
         metricsSystem : "international",
         rightClickMsg : "Cliquez avec le bouton droit de la souris sur la carte pour désigner le départ et l'arrivée de votre parcours.",
         attribution : {
-            title : "License Attribution",
+            title : "Attribution de licence",
             content : "Disclaimer goes here"
         }
     },
@@ -31,12 +31,25 @@ otp.locale.French = {
     contextMenu : {
         fromHere : "Partir d'ici",
         toHere : "Arriver ici",
+        intermediateHere : "Ajouter un point de passage",
 
         centerHere : "Centrer la carte ici",
         zoomInHere : "Zoomer ici",
         zoomOutHere : "Dézoomer ici",
         previous : "position précédente",
         next : "position suivante"
+    },
+
+    bikeTriangle : 
+    {
+        safeName : "Le plus Sûr",
+        safeSym  : "S",
+
+        hillName : "Le plus Plat",
+        hillSym  : "P",
+
+        timeName : "Le plus Rapide",
+        timeSym  : "R"
     },
 
     service : {
@@ -82,7 +95,9 @@ otp.locale.French = {
         ok : "OK",
         cancel : "Annuler",
         yes : "Oui",
-        no : "Non"
+        no : "Non",
+        showDetails  : "Montrer les détails...",
+        hideDetails  : "Masquer les détails..."
     },
 
     // note: keep these lower case (and uppercase via template / code if needed)
@@ -110,7 +125,10 @@ otp.locale.French = {
         to : "vers",
         via : "via",
         circle_counterclockwise : "prendre le rond-point",
-        circle_clockwise : "prendre le rond-point dans le sens horaire"
+        circle_clockwise : "prendre le rond-point dans le sens horaire",
+        // rather than just being a direction, this should be
+        // full-fledged to take just the exit name at the end
+        elevator: "prendre l'ascenseur niveau"
     },
 
     // see otp.planner.Templates for use ... these are used on the trip
@@ -143,32 +161,33 @@ otp.locale.French = {
 
     // see otp.planner.Templates for use
     labels : {
-        about : "Environ",
-        stop_id : "Id arrêt",
+        agency_msg   : "Service géré par",
+        about        : "Environ",
+        stop_id      : "Id arrêt",
         trip_details : "Détails de l'itinéraire",
-        fare : "Tarif",
-        fare_symbol : "\u20ac",
-        travel : "Départ le",
-        valid : "Calculé le",
-        trip_length : "Durée",
-        with_a_walk : "avec une marche de",
+        fare         : "Tarif",
+        fare_symbol  : "\u20ac",
+        travel       : "Départ le",
+        valid        : "Calculé le",
+        trip_length  : "Durée",
+        with_a_walk  : "avec une marche de",
         alert_for_rt : "Alerte sur la ligne"
     },
 
     // see otp.planner.Templates for use -- one output are the itinerary leg
     // headers
     modes : {
-        WALK : "MARCHE À PIED",
-        BICYCLE : "VÉLO",
-        CAR : "VOITURE",
-        TRAM : "TRAMWAY",
-        SUBWAY : "MÉTRO",
-        RAIL : "TRAIN",
-        BUS : "BUS",
-        FERRY : "FERRY",
-        CABLE_CAR : "TRAMWAY FUNICULAIRE",
-        GONDOLA : "TÉLÉPHÉRIQUE",
-        FUNICULAR : "FUNICULAIRE"
+        WALK : "Marche à pied",
+        BICYCLE : "Vélo",
+        CAR : "Voiture",
+        TRAM : "Tramway",
+        SUBWAY : "Métro",
+        RAIL : "Train",
+        BUS : "Bus",
+        FERRY : "Ferry",
+        CABLE_CAR : "Tramway funiculaire",
+        GONDOLA : "Téléphérique",
+        FUNICULAR : "Funiculaire"
     },
 
     ordinal_exit : {
@@ -186,6 +205,8 @@ otp.locale.French = {
 
     time : {
         format : "d.m.Y \\à H:i",
+        date_format : "d-m-Y",
+        time_format : "H:i",
         minute : "minute",
         minutes : "minutes",
         minute_abbrev : "min",
@@ -197,7 +218,7 @@ otp.locale.French = {
 
     systemmap : {
         labels : {
-            panelTitle : "System Map"
+            panelTitle : "Carte du réseau"
         }
     },
 
@@ -216,10 +237,11 @@ otp.locale.French = {
             fromHere : "Partir d'ici",
             to : "Arrivée",
             toHere : "Arriver ici",
+            intermediate  : "Point de passage",
             minimize : "Optimiser pour",
             maxWalkDistance : "Marche maximum",
-            maxBikeDistance: "Parcours à vélo maximum",
-            arriveDepart : "Arriver à/Partir de",
+            maxBikeDistance : "Parcours à vélo maximum",
+            arriveDepart    : "Arriver à/Partir de",
             mode : "Voyager par",
             wheelchair : "Accessible aux fauteuils roulants",
             go : "Go",
@@ -274,8 +296,12 @@ otp.locale.French = {
             360 : "Adresses de départ et destination ambigües"
         },
 
-        options : [ [ 'TRANSFERS', 'Le plus direct' ],
-                [ 'QUICK', 'Le plus rapide' ], [ 'SAFE', 'Le plus sûr' ] ],
+        options : [ 
+                [ 'TRANSFERS', 'Le plus direct' ],
+                [ 'QUICK', 'Le plus rapide' ], 
+                [ 'SAFE', 'Le plus sûr' ],
+                ['TRIANGLE',  'Personnalisé...'] 
+        ],
 
         arriveDepart : [ [ 'false', 'Départ' ], [ 'true', 'Arriver' ] ],
 

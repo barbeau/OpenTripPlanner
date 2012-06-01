@@ -14,14 +14,14 @@
 package org.opentripplanner.routing.edgetype;
 
 import org.opentripplanner.common.geometry.PackedCoordinateSequence;
-import org.opentripplanner.routing.core.EdgeNarrative;
+import org.opentripplanner.routing.graph.Edge;
 
 /**
  * An edge which has an elevation profile -- a street, basically.
  *
  */
-public interface EdgeWithElevation extends EdgeNarrative {
+public interface EdgeWithElevation extends Edge {
     public PackedCoordinateSequence getElevationProfile();
     public PackedCoordinateSequence getElevationProfile(double from, double to);
-    public void setElevationProfile(PackedCoordinateSequence elevPCS);
+    public boolean setElevationProfile(PackedCoordinateSequence elevPCS, boolean computed);
 }

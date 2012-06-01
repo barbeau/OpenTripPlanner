@@ -86,6 +86,8 @@ otp.planner.Utils = {
                   {name: 'id',               mapping: '@id'},
                   {name: 'mode',             mapping: '@mode'},
                   {name: 'agencyId',         mapping: '@agencyId'},
+                  {name: 'agencyName',       mapping: '@agencyName'},
+                  {name: 'agencyUrl',        mapping: '@agencyUrl'},
                   {name: 'headsign',         mapping: '@headsign'},
                   {name: 'order',            mapping: '@order'},
                   {name: 'interline',        mapping: '@interlineWithPreviousLeg'},
@@ -119,10 +121,10 @@ otp.planner.Utils = {
                   {name: 'routeLongName',    mapping: '@routeLongName'},
                   {name: 'fromName',         mapping: 'from/name'},
                   {name: 'fromDescription',  mapping: 'from/description'},
-                  {name: 'fromStopId',       mapping: 'from/stopId/id'},
+                  {name: 'fromStopCode',     mapping: 'from/stopCode'},
                   {name: 'toName',           mapping: 'to/name'},
                   {name: 'toDescription',    mapping: 'to/description'},
-                  {name: 'toStopId',         mapping: 'to/stopId/id'},
+                  {name: 'toStopCode',       mapping: 'to/stopCode'},
 
                   {name: 'steps',            mapping: 'steps', 
                                              convert: function(val, rec) {
@@ -263,23 +265,23 @@ otp.planner.Utils = {
     {
         var thisID = this.TRIPDETAILS_TREE + id;
         var root = otp.util.ExtUtils.makeTreeNode({
-                id: 'root-' + thisID,
-                text: '<strong>' + id + '</strong>',
-                cls: this.DETAIL_CLS,
-                iconCls: this.DETAIL_CLS,
-                leaf: false
+                id      : 'root-' + thisID,
+                text    : '<strong>' + id + '</strong>',
+                cls     : this.DETAIL_CLS,
+                iconCls : this.DETAIL_CLS,
+                leaf    : false
         }, clickCallback, scope);
         var retVal = new Ext.tree.TreePanel({
-            plugins    : new Ext.tree.NodeMouseoverPlugin(),
-            root       : root,
-            id         : thisID,
-            lines      : false,
-            //autoScroll:true,
-            collapsible:   false,
-            rootVisible:   false,
-            collapseFirst: false,
-            margins:  '0 0 0 0',
-            cmargins: '0 0 0 0'
+            plugins       : new Ext.tree.NodeMouseoverPlugin(),
+            root          : root,
+            id            : thisID,
+            lines         : false,
+            //autoScroll  : true,
+            collapsible   : false,
+            rootVisible   : false,
+            collapseFirst : false,
+            margins       : '0 0 0 0',
+            cmargins      : '0 0 0 0'
         });
         
         return retVal;
@@ -299,7 +301,7 @@ otp.planner.Utils = {
             autoScroll:   true,
             border:       false,
             buttonAlign: 'center',
-            buttons:      buttons,
+            buttons:      buttons.length > 0 ? buttons : null,
             items:        [itinTree, detailsTree]
         });
         
@@ -328,6 +330,20 @@ otp.planner.Utils = {
             fields: this.ITIN_RECORD,
             reader: new Ext.data.XmlReader({record: 'itinerary'}, this.ITIN_RECORD)
         });
+    },
+
+    /** return either a 3 mile or 5 km value that works with the maxWalk form field values */
+    bikeMinimum : function() 
+    {
+        var retVal = 5000; // isEnglish ? 4828 : 5000; 
+        try
+        {
+            if(otp.config.metricsSystem == 'english')
+                retVal = 4828;
+        }
+        catch(e)
+        {}
+        return retVal;
     },
 
     /**

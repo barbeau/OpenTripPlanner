@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 
 import junit.framework.TestCase;
@@ -27,9 +28,9 @@ import org.opentripplanner.graph_builder.impl.GtfsGraphBuilderImpl;
 import org.opentripplanner.graph_builder.model.GtfsBundle;
 import org.opentripplanner.graph_builder.model.GtfsBundles;
 import org.opentripplanner.graph_builder.services.GraphBuilderWithGtfsDao;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
 import org.opentripplanner.routing.edgetype.PreAlightEdge;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
 import org.opentripplanner.routing.services.TransitIndexService;
 import org.opentripplanner.routing.transit_index.RouteVariant;
 
@@ -53,13 +54,13 @@ public class TransitIndexBuilderTest extends TestCase {
 		builders.add(builder);
 		gtfsBuilder.setGtfsGraphBuilders(builders);
 		
-		gtfsBuilder.buildGraph(graph);
+		gtfsBuilder.buildGraph(graph, new HashMap<Class<?>, Object>());
 		
 		TransitIndexService index = graph.getService(TransitIndexService.class); 
 	
 		assertNotNull(index);
 		
-		Edge prealightEdge = index.getPrealightEdge(new AgencyAndId("agency", "A"));
+		Edge prealightEdge = index.getPreAlightEdge(new AgencyAndId("agency", "A"));
 		assertTrue(prealightEdge instanceof PreAlightEdge);
 		
 		//route 18 is the only bidirectional route in the test data

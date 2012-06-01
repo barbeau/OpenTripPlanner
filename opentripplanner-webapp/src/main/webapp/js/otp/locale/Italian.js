@@ -34,12 +34,25 @@ otp.locale.Italian = {
     {
         fromHere         : "Punto di partenza",
         toHere           : "Punto di arrivo",
+        intermediateHere : "Aggiungi destinazione",
 
         centerHere       : "Centra la mappa",
-        zoomInHere       : "Zoom su questa zona",
-        zoomOutHere      : "Zoom out da questa zona",
+        zoomInHere       : "Zoom",
+        zoomOutHere      : "Zoom out",
         previous         : "Posizione precedente sulla mappa",
         next             : "Posizione successiva sulla mappa"
+    },
+
+    bikeTriangle : 
+    {
+        safeName : "Piu\' sicuro",
+        safeSym  : "S",
+
+        hillName : "Pianeggiante",
+        hillSym  : "F",
+
+        timeName : "Piu\' veloce",
+        timeSym  : "Q"
     },
 
     service : 
@@ -88,7 +101,9 @@ otp.locale.Italian = {
         ok           : "OK",
         cancel       : "Annulla",
         yes          : "Si",
-        no           : "No"
+        no           : "No",
+        showDetails  : "Mostra dettagli...",
+        hideDetails  : "Nascondi dettagli..."
     },
 
     // note: keep these lower case (and uppercase via template / code if needed)
@@ -117,7 +132,8 @@ otp.locale.Italian = {
         to:             "a",
         via:            "via",
         circle_counterclockwise: "prendere la rotatoria in senso anti-orario",
-        circle_clockwise:        "prendere la rotatoria in senso orario"        
+        circle_clockwise:        "prendere la rotatoria in senso orario",
+        elevator: "prendi l\'ascensore per"        
     },
 
     // see otp.planner.Templates for use
@@ -135,8 +151,8 @@ otp.locale.Italian = {
         move         : "Procedi",
         move_toward  : "Procedi",
 
-        transfer     : "Trasferisci",
-        transfers    : "Trasferisci",
+        transfer     : "Cambio",
+        transfers    : "Cambi",
 
         continue_as  : "Avanza verso",
         stay_aboard  : "Resta a bordo",
@@ -151,6 +167,8 @@ otp.locale.Italian = {
     // see otp.planner.Templates for use
     labels : 
     {
+        agency_msg   : "Servizio offerto da",
+        agency_msg_tt: "Apri il sito dell'azienda in una nuova finestra...",
         about        : "Informazioni",
         stop_id      : "ID Fermata",
         trip_details : "Dettagli viaggio",
@@ -201,6 +219,8 @@ otp.locale.Italian = {
         second_abbrev  : "sec",
         seconds_abbrev : "sec",
         format         : "D, j M H:i",
+        date_format    : "d-m-Y",
+        time_format    : "H:i",
         months         : ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Aug', 'Set', 'Ott', 'Nov', 'Dic']
     },
 
@@ -218,7 +238,7 @@ otp.locale.Italian = {
         labels : 
         {
             panelTitle    : "Pianificazione del percorso",
-            tabTitle      : "Pianifica percorso",
+            tabTitle      : "Nuovo percorso",
             inputTitle    : "Dettagli del percorso",
             optTitle      : "Preferenze per il percorso (opzionale)",
             submitMsg     : "Percorso in elaborazione...",
@@ -230,8 +250,10 @@ otp.locale.Italian = {
             fromHere      : "Da qui",
             to            : "A",
             toHere        : "A qui",
+            intermediate  : "Punto intermedio",
             minimize      : "Mostrami",
             maxWalkDistance: "Massimo cammino a piedi",
+            maxBikeDistance: "Massimo distanza in bici",
             arriveDepart  : "Arriva entro/Parti a",
             mode          : "Passa per",
             wheelchair    : "Percorso accessibile ai portatori di sedia a rotelle", 
@@ -243,10 +265,10 @@ otp.locale.Italian = {
         // see otp/config.js for where these values are used
         link : 
         {
-            text           : "Link to this trip (OTP)",
-            trip_separator : "This trip on other transit planners",
-            bike_separator : "On other bike trip planners",
-            walk_separator : "On other walking direction planners",
+            text           : "Link a questo percorso",
+            trip_separator : "Link ad un altro sistema",
+            bike_separator : "Link ad un altro sistema basato su bici",
+            walk_separator : "Link ad un altro sistema a piedi",
             google_transit : "Google Transit",
             google_bikes   : "Google Bike Directions",
             google_walk    : "Google Walking Directions",
@@ -256,14 +278,12 @@ otp.locale.Italian = {
         // see otp.planner.Forms for use
         geocoder:
         {
-            // TODO
-            working      : "Looking up address ....",
+            working      : "Cerca indirizzo ....",
             error        : "Nessun risultato trovato",
             msg_title    : "Pianificazione del viaggio",
             msg_content  : "Correggere gli errori prima di avviare la ricerca",
-            // TODO
-            select_result_title : "Please select a result",
-            address_header : "Address"
+            select_result_title : "Seleziona un risultato",
+            address_header : "Indirizzo"
         },
 
         error:
@@ -297,7 +317,8 @@ otp.locale.Italian = {
         [
           ['TRANSFERS', 'Minori cambi di mezzo'],
           ['QUICK',     'Percorso piu\' veloce'],
-          ['SAFE',      'percorso piu\' sicuro']
+          ['SAFE',      'Percorso piu\' sicuro'],
+          ['TRIANGLE',  'Personalizzato...']
         ],
     
         arriveDepart: 
@@ -308,7 +329,7 @@ otp.locale.Italian = {
     
         maxWalkDistance : 
         [
-            ['500',   '500 metros'],
+            ['500',   '500 m'],
             ['1000',   '1 km'],
             ['5000',   '5 km'],
             ['10000',  '10 km'],

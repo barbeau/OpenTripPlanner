@@ -16,8 +16,8 @@ package org.opentripplanner.routing.services;
 import java.util.List;
 
 import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.spt.GraphPath;
 
 public interface RoutingService {
@@ -36,15 +36,16 @@ public interface RoutingService {
 
     /**
      * Here we wish to plan a trip that starts at "fromVertex", travels through the intermediate
-     * vertices in some arbitrary but hopefully optimal order, and eventually end up at "toVertex".
+     * vertices in either the optimal order or the specified order, and eventually end up at "toVertex".
      * 
      * @param fromPlace
      * @param toPlace
      * @param intermediatePlaces
      * @param dateTime
+     * @param ordered whether the ordering is optimal (false), or specified (true)
      * @param options
      * @return
      */
     public GraphPath route(Vertex fromVertex, Vertex toVertex, List<Vertex> intermediateVertices,
-            int time, TraverseOptions options);
+            boolean ordered, int dateTime, RoutingRequest options);
 }

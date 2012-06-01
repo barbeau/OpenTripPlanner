@@ -1,6 +1,20 @@
+/* This program is free software: you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public License
+ as published by the Free Software Foundation, either version 3 of
+ the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>. */
+
 package org.opentripplanner.routing.patch;
 
 import java.io.Serializable;
+import java.util.Date;
 import java.util.HashSet;
 
 import javax.xml.bind.annotation.XmlElement;
@@ -10,6 +24,8 @@ import javax.xml.bind.annotation.XmlType;
 public class Alert implements Serializable {
     private static final long serialVersionUID = 8305126586053909836L;
 
+    public static final String defaultLanguage = "en";
+
     @XmlElement
     public TranslatedString alertHeaderText;
 
@@ -18,6 +34,10 @@ public class Alert implements Serializable {
 
     @XmlElement
     public TranslatedString alertUrl;
+
+    //null means unknown
+    @XmlElement
+    public Date effectiveStartDate;
 
     public static HashSet<Alert> newSimpleAlertSet(String text) {
         Alert note = createSimpleAlerts(text);
@@ -29,7 +49,7 @@ public class Alert implements Serializable {
     public static Alert createSimpleAlerts(String text) {
         Alert note = new Alert();
         note.alertHeaderText = new TranslatedString();
-        note.alertHeaderText.addTranslation("en", text);
+        note.alertHeaderText.addTranslation(defaultLanguage, text);
         return note;
     }
 

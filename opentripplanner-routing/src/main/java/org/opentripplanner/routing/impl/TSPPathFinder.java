@@ -20,11 +20,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-import org.opentripplanner.routing.core.Edge;
 import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
 import org.opentripplanner.routing.edgetype.LegSwitchingEdge;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.spt.GraphPath;
 
 /**
@@ -90,7 +90,7 @@ public class TSPPathFinder {
     }
     
     public static GraphPath findShortestPath(Vertex toVertex, Vertex fromVertex,
-            Map<Vertex, HashMap<Vertex, GraphPath>> paths, HashSet<Vertex> vertices, long time, TraverseOptions options) {
+            Map<Vertex, HashMap<Vertex, GraphPath>> paths, HashSet<Vertex> vertices, long time, RoutingRequest options) {
    
         TSPPath shortestPath = findShortestPathInternal(toVertex, fromVertex, paths, vertices, 0);
         
@@ -98,7 +98,7 @@ public class TSPPathFinder {
         
         HashMap<Vertex, GraphPath> pathsFromFV = paths.get(fromVertex);
         //get the path from the end of the first subpath
-		GraphPath newPath = new GraphPath(pathsFromFV.get(firstIntermediate).states.getLast(), false);
+        GraphPath newPath = new GraphPath(pathsFromFV.get(firstIntermediate).states.getLast(), false);
         Vertex lastVertex = firstIntermediate;
         for (Vertex v : shortestPath.vertices.subList(1, shortestPath.vertices.size())) {
                State lastState = newPath.states.getLast();

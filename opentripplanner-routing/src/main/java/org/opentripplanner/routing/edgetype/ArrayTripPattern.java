@@ -19,6 +19,10 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlTransient;
+
+import org.onebusaway.gtfs.model.Stop;
 import org.onebusaway.gtfs.model.Trip;
 
 /**
@@ -41,7 +45,7 @@ class IntArrayIterator implements Iterator<Integer> {
 
     @Override
     public boolean hasNext() {
-        return nextPosition == array.length;
+        return nextPosition < array.length;
     }
 
     @Override
@@ -59,7 +63,7 @@ class IntArrayIterator implements Iterator<Integer> {
 /**
  * A memory-efficient implementation of TripPattern
  */
-public class ArrayTripPattern implements TripPattern, Serializable {
+public class ArrayTripPattern implements TableTripPattern, Serializable {
 
     private static final long serialVersionUID = -1283975534796913802L;
 
@@ -68,20 +72,25 @@ public class ArrayTripPattern implements TripPattern, Serializable {
      */
     private Trip exemplar;
 
+    @XmlElement
     private int[][] departureTimes;
 
     private int[][] runningTimes;
 
+    @XmlElement
     private int[][] arrivalTimes;
 
     private int[][] dwellTimes;
-    
+
     private String[][] headsigns;
 
+    @XmlElement
     private String[] zones;
 
+    @XmlElement
     private int[] perTripFlags;
 
+    @XmlElement
     private int[] perStopFlags;
 
     private Trip[] trips;
@@ -175,8 +184,9 @@ public class ArrayTripPattern implements TripPattern, Serializable {
 
     public int getNextTrip(int stopIndex, int afterTime, boolean wheelchairAccessible,
             boolean bikesAllowed, boolean pickup) {
-        int flag = pickup ? FLAG_PICKUP : FLAG_DROPOFF;
-        if ((perStopFlags[stopIndex] & flag) == 0) {
+        int mask = pickup ? MASK_PICKUP : MASK_DROPOFF;
+        int shift = pickup ? SHIFT_PICKUP : SHIFT_DROPOFF;
+        if ((perStopFlags[stopIndex] & mask) >> shift == NO_PICKUP) {
             return -1;
         }
         if (wheelchairAccessible && (perStopFlags[stopIndex] & FLAG_WHEELCHAIR_ACCESSIBLE) == 0) {
@@ -215,8 +225,9 @@ public class ArrayTripPattern implements TripPattern, Serializable {
 
     public int getPreviousTrip(int stopIndex, int beforeTime, boolean wheelchairAccessible,
             boolean bikesAllowed, boolean pickup) {
-        int flag = pickup ? FLAG_PICKUP : FLAG_DROPOFF;
-        if ((perStopFlags[stopIndex + 1] & flag) == 0) {
+        int mask = pickup ? MASK_PICKUP : MASK_DROPOFF;
+        int shift = pickup ? SHIFT_PICKUP : SHIFT_DROPOFF;
+        if ((perStopFlags[stopIndex + 1] & mask) >> shift == NO_PICKUP) {
             return -1;
         }
         if (wheelchairAccessible && (perStopFlags[stopIndex + 1] & FLAG_WHEELCHAIR_ACCESSIBLE) == 0) {
@@ -285,16 +296,17 @@ public class ArrayTripPattern implements TripPattern, Serializable {
         return trips[tripIndex];
     }
     
+    @XmlTransient
     public List<Trip> getTrips() {
     	return Arrays.asList(trips);
     }
 
     public boolean canAlight(int stopIndex) {
-        return (perStopFlags[stopIndex] & FLAG_DROPOFF) != 0;
+        return getAlightType(stopIndex) != NO_PICKUP;
     }
 
     public boolean canBoard(int stopIndex) {
-        return (perStopFlags[stopIndex] & FLAG_PICKUP) != 0;
+        return getBoardType(stopIndex) != NO_PICKUP;
     }
 
     public String getZone(int stopIndex) {
@@ -326,4 +338,19 @@ public class ArrayTripPattern implements TripPattern, Serializable {
 		}
 		return headsigns[stopIndex][trip]; 
 	}
+
+    @Override
+    public int getAlightType(int stopIndex) {
+        return (perStopFlags[stopIndex] & MASK_DROPOFF) >> SHIFT_DROPOFF;
+    }
+
+    @Override
+    public int getBoardType(int stopIndex) {
+        return (perStopFlags[stopIndex] & MASK_PICKUP) >> SHIFT_PICKUP;
+    }
+
+    @Override
+    public List<Stop> getStops() {
+        throw new UnsupportedOperationException();
+    }
 }

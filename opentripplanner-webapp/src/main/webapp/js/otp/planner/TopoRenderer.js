@@ -23,70 +23,96 @@ otp.namespace("otp.planner");
   * TopoRenderer is created by Planner.
   */
 
-otp.planner.TopoRenderer = {
-    
-    map :      null,
-    panel :    null,
-    
-    axisDiv :              null,
-    terrainContainerDiv :  null,
-    terrainDiv :           null,
-    previewDiv :           null,
-    
-    terrainPct :       0.8,
-    axisWidth :        40,
-    nonBikeLegWidth:   150,
-    
-    terrainCursor :    null,
-    
-    currentLeft      : 0,
-    currentMouseRect : null,
-    markerLayer    :   null,
-    locationPoint  :   null,
-    locationMarker :   null,
-    
+otp.planner.TopoRendererStatic = {
+
+    map :       null,
+    panel :     null,
+
+    mainContainerDiv :      null,
+    axisDiv :               null,
+    terrainContainerDiv :   null,
+    terrainDiv :            null,
+    previewDiv :            null,
+
+    terrainPct :        0.8,
+    axisWidth :         40,
+    nonBikeLegWidth:    150,
+
+    terrainCursor :     null,
+
+    currentLeft      :  0,
+    currentMouseRect :  null,
+    markerLayer    :    null,
+    locationPoint  :    null,
+    locationMarker :    null,
+
+    legInfoArr :        null,
+    nonBikeWalkLegCount :   null,
+    minElev :           null,
+    maxElev :           null,
+    totalDistance :     null,
+    THIS          :     null,
+
     /** */
     initialize : function(config)
     {
         otp.configure(this, config);
+        otp.planner.TopoRendererStatic.THIS = this;
+        this.THIS = this;
     },
     
-    draw : function(itin, tree) {
-        var thisTR = this;
-
-        var nonBikeLegCount = 0;
+    processItinerary : function(itin) {
+        this.legInfoArr = new Array();
+        this.nonBikeWalkLegCount = 0;
+        this.minElev = 100000;
+        this.maxElev = -1000;
         
-        // calculate the distance and elevation range
-        var distance = 0, minElev = 100000, maxElev = -1000;
+        this.totalDistance = 0;
+        
         for (var li = 0; li < itin.m_legStore.getTotalCount(); li++) {
             
             var leg = itin.m_legStore.getAt(li);
+        
+            var legInfo = new Array();
+            this.legInfoArr.push(legInfo);
             
-            if(leg.get('mode') != "BICYCLE") {
-                nonBikeLegCount++;
+            legInfo.leg = leg;
+            
+            if(leg.get('mode') != "BICYCLE" && leg.get('mode') != "WALK") {
+                this.nonBikeWalkLegCount++;
                 continue;
             }
             
             var steps = leg.data.steps;
+            var firstElev = 0, lastElev = 0;
             for (var si = 0; si < steps.length; si++) {
-                distance += steps[si].distance;
+                this.totalDistance += steps[si].distance;
                 if (typeof steps[si].elevation == 'undefined') {
                     continue;
                 }
                 var elevArr = steps[si].elevation.split(",");
                 for (var ei = 1; ei < elevArr.length; ei+=2) {
                     var elevFt = elevArr[ei] * 3.2808399;
-                    if (elevFt < minElev) {
-                        minElev = elevFt;
+                    if (elevFt < this.minElev) {
+                        this.minElev = elevFt;
                     }
-                    if (elevFt > maxElev) {
-                        maxElev = elevFt;
+                    if (elevFt > this.maxElev) {
+                        this.maxElev = elevFt;
                     }
+                    if(firstElev == 0 && elevFt > 0) firstElev = elevFt;
+                    if(elevFt > 0) lastElev = elevFt;
                 }       
             }
+            legInfo.firstElev = firstElev;
+            legInfo.lastElev = lastElev;
         }
-        minElev = 100*Math.floor(minElev/100);
-        maxElev = 100*Math.ceil(maxElev/100);
+        
+    },
+    
+    draw : function(itin, tree) {
+        var thisTR = this;
+        
+        this.processItinerary(itin);
         
         var width = this.panel.getEl().getWidth();
         var height = this.panel.getEl().getHeight();
@@ -95,16 +121,32 @@ otp.planner.TopoRenderer = {
         this.markerLayer = null;
         this.locationPoint = null;
         this.locationMarker = null;
-        var res = 5; // resolution of the main terrain graph in ft per pixel
-        var terrainWidth = (distance*3.2808399)/res + nonBikeLegCount*this.nonBikeLegWidth;
+        
+        // compute the resolution of the main terrain graph in ft per pixel
+        var res = Math.floor(this.totalDistance / 5000); 
+        if(res < 5) res = 5;
+        
+        // compute the width of the main elevation graphic in pixels
+        var terrainWidth = (this.totalDistance*3.2808399)/res + this.nonBikeWalkLegCount*this.nonBikeLegWidth;
+        
+        // if the graph is wider than what can be displayed without scrolling, 
+        // split the panel between the main graph and a "preview" strip 
         var showPreview = (terrainWidth > width);
         var terrainHeight = showPreview ? height * this.terrainPct : height;
         var previewHeight = height - terrainHeight;
-        var subDivisions = (maxElev-minElev)/100;
-        var subDivHeight = terrainHeight / subDivisions;
-                
-        this.createContainerDivs(width, height, terrainWidth, showPreview);
         
+        // determine the interval at which to show 
+        
+        var elevSpan = this.maxElev - this.minElev;        
+        var elevInterval = Math.floor((elevSpan/terrainHeight)*.5)*100;
+        if(elevInterval < 100) elevInterval = 100;
+        
+        // expand the min/max elevation range to align with interval multiples 
+        this.minElev = elevInterval*Math.floor(this.minElev/elevInterval);
+        this.maxElev = elevInterval*Math.ceil(this.maxElev/elevInterval);
+
+        // create the container div elements and associated Raphael canvases                     
+        this.createContainerDivs(width, height, terrainWidth, showPreview);  
         var axisCanvas = Raphael(this.axisDiv);
         var terrainCanvas = Raphael(this.terrainDiv);
                
@@ -129,6 +171,8 @@ otp.planner.TopoRenderer = {
         var d, rect;
         
         // draw the axis elevation labels
+        var subDivisions = (this.maxElev-this.minElev)/elevInterval;
+        var subDivHeight = terrainHeight / subDivisions;
         for (d = 0; d <= subDivisions; d++) {
             var textY = subDivHeight*d;
             axisCanvas.rect(0, textY, this.axisWidth, 1).attr({
@@ -142,48 +186,63 @@ otp.planner.TopoRenderer = {
             
             if(d == 0) textY += 6;
             if(d == subDivisions) textY -= 6;
-            axisCanvas.text(this.axisWidth-3, textY, (maxElev-d*100)+"'").attr({
+            axisCanvas.text(this.axisWidth-3, textY, (this.maxElev-d*elevInterval)+"'").attr({
                 fill: 'black',
                 'font-size' : '12px',
                 'font-weight' : 'bold',
                 'text-anchor' : 'end'
-            });            
+            });
         }
-        
+
         // MAIN LOOP
-        
+
         var bgLabels = new Array();
         var fgLabels = new Array();
         var mouseRects = new Array();
         var previewXCoords = new Array();
         var previewYCoords = new Array();
-        var currentX = 0;
-        
+        var currentX = 0, lastTerrainHeight = terrainHeight/2;
+
         // iterate through legs
-        for (var li = 0; li < itin.m_legStore.getTotalCount(); li++) {
-            
-            var leg = itin.m_legStore.getAt(li);
+        for (var li = 0; li < this.legInfoArr.length; li++) {
+            var legInfo = this.legInfoArr[li];
+            var leg = legInfo.leg; //itin.m_legStore.getAt(li);
             leg.topoGraphSpan = 0;
             var legStartX = currentX;
-            
-            // for non-bike legs, insert fixed-width arrow graphic into
-            // topo graph indicating a "jump"
-            if(leg.get('mode') != "BICYCLE") {
-                var nonBikeRect = terrainCanvas.rect(currentX+2, 0, this.nonBikeLegWidth-2, terrainHeight).attr({
-                    fill: 'white',
-                    opacity: .75,
-                    stroke: 'none'
-                });                
 
-                terrainCanvas.rect(currentX+4, terrainHeight/2-6, this.nonBikeLegWidth-15, 12).attr({
+            // for non-bike/walk legs, insert fixed-width arrow graphic into
+            // topo graph indicating a "jump"
+            if(leg.get('mode') != "BICYCLE" && leg.get('mode') != "WALK")
+            {
+                var prevElevY = (li == 0) ? terrainHeight/2 : terrainHeight-terrainHeight*(this.legInfoArr[li-1].lastElev-this.minElev)/(this.maxElev-this.minElev);
+                var nextElevY = (li >= this.legInfoArr.length-1) ? terrainHeight/2 : terrainHeight-terrainHeight*(this.legInfoArr[li+1].firstElev-this.minElev)/(this.maxElev-this.minElev);
+
+                if(isNaN(prevElevY) || prevElevY < 0 || prevElevY >= terrainHeight) prevElevY = terrainHeight/2;
+                if(isNaN(nextElevY) || nextElevY < 0 || nextElevY >= terrainHeight) nextElevY = terrainHeight/2;
+
+                var midX = currentX + this.nonBikeLegWidth/2;
+                var midY = (prevElevY + nextElevY)/2;
+
+                var curve = [["M",currentX+4, prevElevY],["C", midX, prevElevY, midX, prevElevY, midX, midY],["C", midX, nextElevY, midX, nextElevY, currentX+this.nonBikeLegWidth-16, nextElevY]];
+                terrainCanvas.path(curve).attr({
+                    stroke : 'black', 
+                    'stroke-width' : '6',
+                    fill : 'none'
+                });
+
+                // mode strings (localized to otp.locale by default) 
+                var mode    = leg.get('mode').toLowerCase();
+                var modeStr = otp.util.Modes.translate(mode, this.locale);
+                var imgPath = "images/ui/trip/mode/" + mode + ".png";
+
+                terrainCanvas.image(imgPath, midX-10, midY-10, 20, 20);
+
+                // draw the arrowhead
+                terrainCanvas.path(["M",currentX+this.nonBikeLegWidth-16, nextElevY-12, "L", currentX+this.nonBikeLegWidth-4, nextElevY, "L", currentX+this.nonBikeLegWidth-16, nextElevY+12,"z"]).attr({
                     fill: 'black',
                     stroke: 'none'
                 });
-                terrainCanvas.path(["M",currentX+this.nonBikeLegWidth-16, terrainHeight/2-12, "L", currentX+this.nonBikeLegWidth-4, terrainHeight/2, "L", currentX+this.nonBikeLegWidth-16, terrainHeight/2+12,"z"]).attr({
-                    fill: 'black',
-                    stroke: 'none'
-                });
-                terrainCanvas.text(currentX + this.nonBikeLegWidth/2, terrainHeight/2 + 24, leg.get('mode')+" SEGMENT").attr({
+                terrainCanvas.text(currentX + this.nonBikeLegWidth/2, terrainHeight - 10, modeStr + " " + leg.get('routeShortName')).attr({
                     fill: 'black',
                     'font-size' : '14px',
                     'font-weight' : 'bold'
@@ -199,8 +258,9 @@ otp.planner.TopoRenderer = {
                 continue;
             }
                         
-            // for bike legs, iterate through each step of the leg geometry
-            var steps = leg.data.steps;        
+            // for bike/walk legs, iterate through each step of the leg geometry
+            var steps = leg.data.steps;
+            var legXCoords = new Array(), legYCoords = new Array();
             for (si = 0; si < steps.length; si++) {
                 var step = steps[si];
                 var segWidth = (step.distance*3.2808399)/res;
@@ -210,7 +270,6 @@ otp.planner.TopoRenderer = {
                 var terrainPoly = null;
 
                 if (step.elevation != undefined) {
-                    //console.log("elev="+step.elevation);
                     var elevArr = step.elevation.split(",");
                     if(elevArr.length > 2) {
                         var stepLenM = elevArr[elevArr.length-2]; 
@@ -218,12 +277,14 @@ otp.planner.TopoRenderer = {
                             var posM = elevArr[j];
                             var elevFt = elevArr[j+1] * 3.2808399;
                             var x = currentX + (posM/stepLenM)*segWidth;
-                            var y = terrainHeight-terrainHeight*(elevFt-minElev)/(maxElev-minElev);
+                            var y = terrainHeight-terrainHeight*(elevFt-this.minElev)/(this.maxElev-this.minElev);
                             if(j >= elevArr.length-2) x += 1;
                             xCoords.push(x);
-                            yCoords.push(y);                        
+                            yCoords.push(y);
+                            legXCoords.push(x);
+                            legYCoords.push(y);
                             previewXCoords.push(width*x/terrainWidth);
-                            previewYCoords.push(previewHeight * (0.8 - 0.6*(elevFt-minElev)/(maxElev-minElev)));
+                            previewYCoords.push(previewHeight * (0.8 - 0.6*(elevFt-this.minElev)/(this.maxElev-this.minElev)));
                         }
 
                         var pathStr = "M "+ xCoords[0] + " " + yCoords[0]+ " ";
@@ -237,26 +298,19 @@ otp.planner.TopoRenderer = {
                             fill : 'none'
                         });                
 
-                        pathStr += "L "+ (currentX + segWidth +1) + " " + terrainHeight + " ";
-                        pathStr += "L "+ currentX + " " + terrainHeight + " z";
-
-
-                        terrainPoly = terrainCanvas.path(pathStr).attr({
-                            fill : 'rgb(34, 139, 34)', 
-                            opacity : .5,
-                            stroke : 'none'
-                        });
                     }
+                    
+                    lastTerrainHeight = yCoords[yCoords.length-1];
                 }
                 
-                var streetLabelBG = terrainCanvas.text(currentX + segWidth/2, 12, step.streetName).attr({
+                var streetLabelBG = terrainCanvas.text(currentX + segWidth/2, terrainHeight/2, step.streetName).attr({
                     stroke: 'white',                    
                     'stroke-width' : 3,
                     opacity: 0,
                     'font-size' : '16px'
                 });
 
-                var streetLabelFG = terrainCanvas.text(currentX + segWidth/2, 12, step.streetName).attr({
+                var streetLabelFG = terrainCanvas.text(currentX + segWidth/2, terrainHeight/2, step.streetName).attr({
                     fill: 'black',
                     opacity: 0,
                     'font-size' : '16px'
@@ -282,7 +336,8 @@ otp.planner.TopoRenderer = {
                 mouseRect.mouseover(function(event) {
                     // highlight the polygon and show the street name label
                     // for the segment we're entering
-                    if(this.poly != null) this.poly.animate({fill: "rgb(80, 200, 120)"}, 300);
+                    //if(this.poly != null) this.poly.animate({fill: "rgb(80, 200, 120)"}, 300);
+                    this.animate({'fill-opacity': .25}, 300);
                     this.labelBG.animate({opacity: 1}, 300);
                     this.labelFG.animate({opacity: 1}, 300);
                     thisTR.currentMouseRect = this;
@@ -294,7 +349,9 @@ otp.planner.TopoRenderer = {
                     
                     // de-highlight the polygon and hide the street name label
                     // for the segment we're leaving
-                    if(this.poly != null) this.poly.animate({fill: "rgb(34, 139, 34)"}, 300);
+                    //if(this.poly != null) this.poly.animate({fill: "rgb(34, 139, 34)"}, 300);
+                    this.animate({'fill-opacity': 0}, 300);
+
                     this.labelBG.animate({opacity: 0}, 300);
                     this.labelFG.animate({opacity: 0}, 300);
                     
@@ -304,20 +361,22 @@ otp.planner.TopoRenderer = {
                         thisTR.markerLayer.redraw();
                     }
                 });
-                
+
                 mouseRect.mousemove(function (event) {
                     // shift terrain cursor to follow mouse movement
                     var nx = Math.round(event.clientX - thisTR.panel.getEl().getLeft() - thisTR.axisWidth - thisTR.currentLeft);
                     thisTR.terrainCursor.attr({x : nx});
-                    
+
                     // also, show / move the locator marker on the main map
                     var distAlongLS = this.leg.get('legGeometry').getLength() * (nx-this.legStartX)/this.leg.topoGraphSpan;
-                    thisTR.locationPoint = thisTR.pointAlongLineString(this.leg.get('legGeometry'), distAlongLS);                    
-                    if(thisTR.markerLayer == null) {                        
+                    thisTR.locationPoint = thisTR.pointAlongLineString(this.leg.get('legGeometry'), distAlongLS);
+                    if(thisTR.markerLayer == null) {
                         thisTR.markerLayer = thisTR.map.getMap().getLayersByName('trip-marker-layer')[0];
                     }
-                    if(thisTR.locationMarker == null) {
-                        thisTR.locationMarker = thisTR.markerLayer.getFeatureById('bike-topo-marker');
+
+                    if(thisTR.locationMarker == null || thisTR.locationMarker.attributes.mode != this.leg.get('mode')) {
+                        var topoMarkerID = this.leg.get('mode').toLowerCase()+'-topo-marker';
+                        thisTR.locationMarker = thisTR.markerLayer.getFeatureById(topoMarkerID);
                     }
                     thisTR.locationMarker.style = null;
                     thisTR.locationMarker.move(new OpenLayers.LonLat(thisTR.locationPoint.x, thisTR.locationPoint.y));
@@ -331,10 +390,24 @@ otp.planner.TopoRenderer = {
                 });
                 
                 mouseRects.push(mouseRect);
-
+                
                 currentX += segWidth;
+            } // end of step loop
+            
+            var polyStr = "M "+ legXCoords[0] + " " + legYCoords[0]+ " ";
+            for(var p = 1; p < legXCoords.length; p++) {
+                polyStr += "L "+ legXCoords[p] + " " + legYCoords[p]+ " ";
             }
-        }
+
+            polyStr += "L "+ legXCoords[legXCoords.length-1] + " " + terrainHeight + " ";
+            polyStr += "L "+ legXCoords[0] + " " + terrainHeight + " z";
+
+            terrainPoly = terrainCanvas.path(polyStr).attr({
+                fill : "url(images/ui/topo/bg_"+leg.get("mode").toLowerCase()+".png)", //'rgb(34, 139, 34)', 
+                opacity : .5,
+                stroke : 'none'
+            });
+        } // end of leg loop
         
         // bring terrain cursor and street labels (currently hidden) to foreground
         thisTR.terrainCursor.toFront();        
@@ -456,19 +529,36 @@ otp.planner.TopoRenderer = {
             this.previewDiv.style.top = upperHeight + 'px';
             this.previewDiv.style.left = '0px';
             this.previewDiv.style.height = lowerHeight + 'px';
-            this.previewDiv.style.width = width + 'px';        
+            this.previewDiv.style.width = width + 'px';
         }
-        
+
+        this.mainContainerDiv = document.createElement('div');
+        this.mainContainerDiv.appendChild(this.axisDiv);
+        this.mainContainerDiv.appendChild(this.terrainContainerDiv);
+        this.terrainContainerDiv.appendChild(this.terrainDiv);
+        if(showPreview) this.mainContainerDiv.appendChild(this.previewDiv);
+
         // Remove all existing elements from the topo panel and add the new div
         var panelEl = this.panel.getEl();
         while (panelEl.first()) { 
             panelEl.first().remove();
         }
-        panelEl.appendChild(this.axisDiv);
-        panelEl.appendChild(this.terrainContainerDiv);
-        this.terrainContainerDiv.appendChild(this.terrainDiv);
-        if(showPreview) panelEl.appendChild(this.previewDiv);
-    },    
+        panelEl.appendChild(this.mainContainerDiv);
+    },
+
+
+    /** */
+    removeFromPanel : function()
+    {
+        try
+        {
+            var self = otp.planner.TopoRendererStatic.THIS;
+            self.panel.getEl().dom.removeChild(self.mainContainerDiv);
+        }
+        catch(e)
+        { }
+    },
+
 
     pointAlongLineString : function(ls, d) {
         var points = ls.components;
@@ -489,4 +579,4 @@ otp.planner.TopoRenderer = {
     CLASS_NAME: "otp.planner.TopoRenderer"
 };
 
-otp.planner.TopoRenderer = new otp.Class(otp.planner.TopoRenderer);
+otp.planner.TopoRenderer = new otp.Class(otp.planner.TopoRendererStatic);

@@ -13,35 +13,31 @@
 
 package org.opentripplanner.routing.edgetype.factory;
 
-import static org.opentripplanner.common.IterableLibrary.filter;
-
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.Map.Entry;
+import java.util.Set;
 
+import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.Stop;
 import org.opentripplanner.common.model.P2;
-import org.opentripplanner.gtfs.GtfsLibrary;
+import org.opentripplanner.common.pqueue.BinHeap;
 import org.opentripplanner.routing.algorithm.NegativeWeightException;
-import org.opentripplanner.routing.core.DirectEdge;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
 import org.opentripplanner.routing.core.OptimizeType;
+import org.opentripplanner.routing.core.RoutingRequest;
 import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.TransitStop;
 import org.opentripplanner.routing.core.TraverseMode;
 import org.opentripplanner.routing.core.TraverseModeSet;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.edgetype.BasicTripPattern;
+import org.opentripplanner.routing.edgetype.FrequencyBoard;
 import org.opentripplanner.routing.edgetype.PatternBoard;
 import org.opentripplanner.routing.edgetype.TripPattern;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.impl.StreetVertexIndexServiceImpl;
-import org.opentripplanner.routing.pqueue.BinHeap;
 import org.opentripplanner.routing.spt.BasicShortestPathTree;
+import org.opentripplanner.routing.vertextype.TransitStop;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,12 +57,14 @@ public class LocalStopFinder {
 
     private StreetVertexIndexServiceImpl indexService;
 
-    private TraverseOptions walkingOptions;
+    private RoutingRequest walkingOptions;
 
-    private TraverseOptions bikingOptions;
+    private RoutingRequest bikingOptions;
 
     private HashMap<Stop, HashMap<TripPattern, P2<Double>>> neighborhoods;
 
+    private HashMap<AgencyAndId, TransitStop> transitStops;
+    
     public LocalStopFinder(StreetVertexIndexServiceImpl indexService, Graph graph) {
         this.graph = graph;
         this.indexService = indexService;
@@ -75,16 +73,22 @@ public class LocalStopFinder {
     public void markLocalStops() {
         _log.debug("Finding local stops");
         patterns = new HashSet<TripPattern>();
-
+        transitStops = new HashMap<AgencyAndId, TransitStop>();
         int total = 0;
-        for (GraphVertex gv : graph.getVertices()) {
-            if (gv.vertex instanceof TransitStop) {
-                ((TransitStop) gv.vertex).setLocal(true);
+        for (Vertex gv : graph.getVertices()) {
+            if (gv instanceof TransitStop) {
+                TransitStop ts = (TransitStop) gv;
+                ts.setLocal(true);
+                transitStops.put(ts.getStopId(), ts);
                 total ++;
             }
             for (Edge e : gv.getOutgoing()) {
                 if (e instanceof PatternBoard) {
                     TripPattern pattern = ((PatternBoard) e).getPattern();
+                    patterns.add(pattern);
+                }
+                if (e instanceof FrequencyBoard) {
+                    TripPattern pattern = ((FrequencyBoard) e).getPattern();
                     patterns.add(pattern);
                 }
             }
@@ -94,9 +98,9 @@ public class LocalStopFinder {
 
         neighborhoods = new HashMap<Stop, HashMap<TripPattern, P2<Double>>>();
 
-        walkingOptions = new TraverseOptions(new TraverseModeSet(TraverseMode.WALK));
-        bikingOptions = new TraverseOptions(new TraverseModeSet(TraverseMode.BICYCLE));
-        bikingOptions.optimizeFor = OptimizeType.SAFE;
+        walkingOptions = new RoutingRequest(new TraverseModeSet(TraverseMode.WALK));
+        bikingOptions = new RoutingRequest(new TraverseModeSet(TraverseMode.BICYCLE));
+        bikingOptions.optimize = OptimizeType.SAFE;
 
         int nonLocal = 0;
         for (TripPattern pattern : patterns) {
@@ -209,15 +213,15 @@ public class LocalStopFinder {
      * @return
      */
     private HashMap<TripPattern, Double> getBestDistanceForPatterns(Graph graph, Vertex origin,
-            TraverseOptions options, Set<TripPattern> nearbyPatterns) {
+            RoutingRequest options, Set<TripPattern> nearbyPatterns) {
 
         // Iteration Variables
         HashSet<Vertex> closed = new HashSet<Vertex>();
         BinHeap<State> queue = new BinHeap<State>(50);
-        BasicShortestPathTree spt = new BasicShortestPathTree();
-        State init = new State(origin, options);
-        spt.add(init);
-        queue.insert(init, init.getWeight());
+        BasicShortestPathTree spt = new BasicShortestPathTree(options);
+        State initial = new State(origin, options);
+        spt.add(initial);
+        queue.insert(initial, 0);
 
         HashMap<TripPattern, Double> patternCosts = new HashMap<TripPattern, Double>();
 
@@ -236,12 +240,16 @@ public class LocalStopFinder {
 
             if (fromv instanceof TransitStop) {
                 Vertex departureVertex = null;
-                for (DirectEdge e : filter(graph.getOutgoing(fromv),DirectEdge.class)) {
+                for (Edge e : fromv.getOutgoing()) {
                     /* to departure vertex */
                     departureVertex = e.getToVertex();
                     break;
                 }
-                for (Edge e : graph.getOutgoing(departureVertex)) {
+                if (departureVertex == null) {
+                    _log.debug("Stop without departure vertex.");
+                    continue;
+                }
+                for (Edge e : departureVertex.getOutgoing()) {
                     if (e instanceof PatternBoard) {
                         /* finally, a PatternBoard */
                         TripPattern pattern = ((PatternBoard) e).getPattern();
@@ -268,7 +276,7 @@ public class LocalStopFinder {
                 return patternCosts;
             }
 
-            Iterable<Edge> outgoing = graph.getOutgoing(fromv);
+            Iterable<Edge> outgoing = fromv.getOutgoing();
 
             for (Edge edge : outgoing) {
 
@@ -297,8 +305,7 @@ public class LocalStopFinder {
     }
 
     private TransitStop getVertexForStop(Stop stop) {
-        String label = GtfsLibrary.convertIdToString(stop.getId());
-        return (TransitStop) graph.getVertex(label);
+        return transitStops.get(stop.getId());
     }
 
     private HashSet<TripPattern> getNearbyPatterns(Stop stop) {
@@ -311,13 +318,13 @@ public class LocalStopFinder {
             if (v instanceof TransitStop) {
                 if (((TransitStop) v).isEntrance()) {
                     // enter to get to actual stop
-                    for (DirectEdge e : filter(graph.getOutgoing(v),DirectEdge.class)) {
+                    for (Edge e : v.getOutgoing()) {
                         v = e.getToVertex();
                         break;
                     }
                 }
-                for (DirectEdge e : filter(graph.getOutgoing(v),DirectEdge.class)) {
-                    for (Edge e2 : graph.getOutgoing(e.getToVertex())) {
+                for (Edge e : v.getOutgoing()) {
+                    for (Edge e2 : e.getToVertex().getOutgoing()) {
                         if (e2 instanceof PatternBoard) {
                             neighborhood.add(((PatternBoard) e2).getPattern());
                         }
@@ -329,7 +336,7 @@ public class LocalStopFinder {
     }
 
     private List<Stop> getStops(TripPattern pattern) {
-        return ((BasicTripPattern) pattern).stops;
+        return pattern.getStops();
     }
 
 }

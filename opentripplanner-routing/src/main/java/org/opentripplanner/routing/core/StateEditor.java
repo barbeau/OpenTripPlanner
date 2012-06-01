@@ -17,9 +17,14 @@ import java.util.HashMap;
 import java.util.List;
 
 import org.onebusaway.gtfs.model.AgencyAndId;
+import org.opentripplanner.routing.automata.AutomatonState;
+import org.opentripplanner.routing.edgetype.FreeEdge;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.patch.NoteNarrative;
 import org.opentripplanner.routing.patch.Alert;
 import org.opentripplanner.routing.patch.Patch;
+import org.opentripplanner.routing.pathparser.PathParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,7 +74,14 @@ public class StateEditor {
             // be clever
             // Note that we use equals(), not ==, here to allow for dynamically
             // created vertices
-            if (parent.vertex.equals(en.getFromVertex())) {
+            if (en.getFromVertex().equals(en.getToVertex())
+                    && parent.vertex.equals(en.getFromVertex())) {
+                // TODO LG: We disable this test: the assumption that
+                // the from and to vertex of an edge are not the same
+                // is not true anymore: bike rental on/off edges.
+                traversingBackward = parent.getOptions().isArriveBy();
+                child.vertex = en.getToVertex();
+            } else if (parent.vertex.equals(en.getFromVertex())) {
                 traversingBackward = false;
                 child.vertex = en.getToVertex();
             } else if (parent.vertex.equals(en.getToVertex())) {
@@ -88,7 +100,7 @@ public class StateEditor {
                         .error("Actual traversal direction does not match traversal direction in TraverseOptions.");
                 defectiveTraversal = true;
             }
-            if (parent.stateData.noThruTrafficState == NoThruTrafficState.INIT) {
+            if (parent.stateData.noThruTrafficState == NoThruTrafficState.INIT && !(e instanceof FreeEdge)) {
                 setNoThruTrafficState(NoThruTrafficState.BETWEEN_ISLANDS);
             }
         }
@@ -128,18 +140,22 @@ public class StateEditor {
                 return null;
             }
 
-            applyPatches();
+            if(!applyPatches()) {
+                return null;
+            }
         }
+        if ( ! parsePath(this.child))
+        	return null;
         spawned = true;
         return child;
     }
 
-    public boolean weHaveWalkedTooFar(TraverseOptions options) {
+    public boolean weHaveWalkedTooFar(RoutingRequest options) {
         // Only apply limit in transit-only case
-        if (!options.getModes().getTransit())
+        if (!options.getModes().isTransit())
             return false;
 
-        return child.stateData.walkDistance >= options.maxWalkDistance;
+        return child.walkDistance >= options.maxWalkDistance;
     }
 
     public String toString() {
@@ -218,13 +234,12 @@ public class StateEditor {
     }
 
     public void incrementWalkDistance(double length) {
-        cloneStateDataAsNeeded();
         if (length < 0) {
             _log.warn("A state's walk distance is being incremented by a negative amount.");
             defectiveTraversal = true;
             return;
         }
-        child.stateData.walkDistance += length;
+        child.walkDistance += length;
     }
 
     public void incrementNumBoardings() {
@@ -253,18 +268,31 @@ public class StateEditor {
     }
 
     public void setWalkDistance(double walkDistance) {
-        cloneStateDataAsNeeded();
-        child.stateData.walkDistance = walkDistance;
+        child.walkDistance = walkDistance;
     }
 
     public void setZone(String zone) {
-        cloneStateDataAsNeeded();
-        child.stateData.zone = zone;
+        if (zone == null) {
+            if (child.stateData.zone != null) {
+                cloneStateDataAsNeeded();
+                child.stateData.zone = zone;
+            }
+        } else if (!zone.equals(child.stateData.zone)) {
+            cloneStateDataAsNeeded();
+            child.stateData.zone = zone;
+        }
     }
 
     public void setRoute(AgencyAndId route) {
-        cloneStateDataAsNeeded();
-        child.stateData.route = route;
+        if (route == null) {
+            if (child.stateData.route != null) {
+                cloneStateDataAsNeeded();
+                child.stateData.route = route;
+            }
+        } else if (!route.equals(child.stateData.route)) {
+            cloneStateDataAsNeeded();
+            child.stateData.route = route;
+        }
     }
 
     public void setNumBoardings(int numBoardings) {
@@ -280,6 +308,11 @@ public class StateEditor {
     public void setEverBoarded(boolean everBoarded) {
         cloneStateDataAsNeeded();
         child.stateData.everBoarded = everBoarded;
+    }
+
+    public void setBikeRenting(boolean bikeRenting) {
+        cloneStateDataAsNeeded();
+        child.stateData.usingRentedBike = bikeRenting;
     }
 
     public void setPreviousStop(Vertex previousStop) {
@@ -318,6 +351,8 @@ public class StateEditor {
         child.stateData.trip = state.stateData.trip;
         child.stateData.tripId = state.stateData.tripId;
         child.stateData.zone = state.stateData.zone;
+        child.stateData.extensions = state.stateData.extensions;
+        child.stateData.usingRentedBike = state.stateData.usingRentedBike;
     }
 
     /* PUBLIC GETTER METHODS */
@@ -367,6 +402,10 @@ public class StateEditor {
         return child.isEverBoarded();
     }
 
+    public boolean isRentingBike() {
+        return child.isBikeRenting();
+    }
+
     public Vertex getPreviousStop() {
         return child.getPreviousStop();
     }
@@ -394,22 +433,31 @@ public class StateEditor {
      * state's back edge) and allow these patches to manipulate the StateEditor before the child
      * state is put to use.
      * 
-     * @return whether any patches were applied
+     * @return false if a patch blocked traversal
      */
     private boolean applyPatches() {
-        boolean filtered = false;
         List<Patch> patches = child.backEdge.getPatches();
+        boolean display = false, active = false;
+
         if (patches != null) {
             for (Patch patch : patches) {
-                if (!patch.activeDuring(child.stateData.options, child.getStartTime(),
-                        child.getTime())) {
-                    continue;
+                active  = false;
+                display = patch.displayDuring(child.stateData.opt, child.getStartTime(),
+                                              child.getTime());
+
+                if(!display) {
+                    active = patch.activeDuring(child.stateData.opt, child.getStartTime(),
+                                                child.getTime());
                 }
-                patch.filterTraverseResult(this);
-                filtered = true;
+
+                if(display || active) {
+                    if(!patch.filterTraverseResult(this, display))
+                        return false;
             }
         }
-        return filtered;
+        }
+
+        return true;
     }
 
     /**
@@ -422,8 +470,38 @@ public class StateEditor {
             child.stateData = child.stateData.clone();
     }
 
-    public void setTraverseOptions(TraverseOptions options) {
-        child.stateData.options = options;
-        traversingBackward = options.isArriveBy();
+    /** return true if all PathParsers advanced to a state other than REJECT */
+    public boolean parsePath(State state) {
+        if (state.stateData.opt.rctx == null)
+            return true; // a lot of tests don't set a routing context
+        PathParser[] parsers = state.stateData.opt.rctx.pathParsers;
+        int[] parserStates = state.pathParserStates;
+        boolean accept = true;
+        boolean modified = false;
+        int i = 0;
+        for (PathParser parser : parsers) {
+            int terminal = parser.terminalFor(state);
+            int oldState = parserStates[i];
+            int newState = parser.transition(oldState, terminal);
+            if (newState != oldState) {
+                if (!modified) {
+                    // clone the state array so only the new state will see modifications
+                    parserStates = parserStates.clone();
+                    modified = true;
+                }
+                parserStates[i] = newState;
+                if (newState == AutomatonState.REJECT)
+                    accept = false;
+            }
+            i++;
+        }
+        if (modified)
+            state.pathParserStates = parserStates;
+        return accept;
+    }
+
+    public void alightTransit() {
+        cloneStateDataAsNeeded();
+        child.stateData.lastTransitWalk = child.getWalkDistance();
     }
 }

@@ -26,10 +26,10 @@ otp.namespace("otp.planner");
 otp.planner.Itinerary = {
     // config
     map            : null,
+    triptab        : null,
     locale         : null,
     templates      : null,
-    showStopIds    : false,
-    useRouteLongName : false,
+    planner        : null,
 
     // raw data
     xml            : null,
@@ -56,6 +56,7 @@ otp.planner.Itinerary = {
 
     // misc
     m_valid        : false,
+    m_modes        : null,
 
     /** */
     initialize : function(config)
@@ -68,12 +69,13 @@ otp.planner.Itinerary = {
         this.m_legStore   = otp.planner.Utils.makeLegStore();
         this.m_fromStore  = otp.planner.Utils.makeFromStore();
         this.m_toStore    = otp.planner.Utils.makeToStore();
-        
-        this.load();
+
+        this._load();
+        this.m_modes = new otp.util.ItineraryModes(config, this);
     },
 
     /** */
-    load : function()
+    _load : function()
     {
         this.m_legStore.loadData(this.xml.node);
         this.m_fromStore.loadData(this.xml.node);
@@ -123,23 +125,27 @@ otp.planner.Itinerary = {
             }
         }
 
-        if (this.map.dataProjection != mLayer.map.getProjection()) {
-            for (var i = 0; i < this.m_markers.length; ++i) {
-                if (!this.m_markers[i].geometry._otp_reprojected) {
-                    this.m_markers[i].geometry._otp_reprojected = true;
-                    this.m_markers[i].geometry.transform(
-                            this.map.dataProjection, 
-                            mLayer.map.getProjectionObject()
-                    );
+        // In order to use this function also for alternative routes
+        if (mLayer != null) { 
+            if (this.map.dataProjection != mLayer.map.getProjection()) {
+                for (var i = 0; i < this.m_markers.length; ++i) {
+                    if (!this.m_markers[i].geometry._otp_reprojected) {
+                        this.m_markers[i].geometry._otp_reprojected = true;
+                        this.m_markers[i].geometry.transform(
+                                this.map.dataProjection, 
+                                mLayer.map.getProjectionObject()
+                        );
+                    }
                 }
             }
+            mLayer.addFeatures(this.m_markers);
         }
 
         vLayer.addFeatures(this.m_vectors);
 
-        mLayer.addFeatures(this.m_markers);
-        this.m_extent = mLayer.getDataExtent();
-        this.m_extent.extend(vLayer.getDataExtent());
+        this.m_extent = vLayer.getDataExtent();
+        if (mLayer != null) // we don't want to change the extent for alternative routes 
+        	this.m_extent.extend(mLayer.getDataExtent());
     },
 
     /** */
@@ -281,7 +287,8 @@ otp.planner.Itinerary = {
      * makes lines between from / to / transfers NOTE: should only be called
      * when creating a new itinerary (not every time that itinerary is drawn)
      */
-    makeWalkLines : function(vLayer) {
+    makeWalkLines : function(vLayer)
+    {
         var vectors = new Array();
 
         var endIndex = this.m_fromStore.getCount() - 1;
@@ -314,7 +321,8 @@ otp.planner.Itinerary = {
    /**
     * Gets a new Marker Layer for drawing the trip plan's features upon
     */
-    makeMarkers : function() {
+    makeMarkers : function()
+    {
         var startIndex = 0;
         var endIndex = this.m_fromStore.getCount() - 1;
 
@@ -440,16 +448,26 @@ otp.planner.Itinerary = {
             type : 'toMarker'
         });
 
-        //create special marker for bike elevation
-        var bikeTopoMarker = otp.util.OpenLayersUtils.makeMarker(fromP.x, fromP.y, { // temp
+        //create special markers for bike/walk elevation
+        var bikeTopoMarker = otp.util.OpenLayersUtils.makeMarker(fromP.x, fromP.y, {
             type : 'fromBicycleMarker',
             mode : 'BICYCLE'
         });
-        bikeTopoMarker.id = 'bike-topo-marker';
+        bikeTopoMarker.id = 'bicycle-topo-marker';
         bikeTopoMarker.style = { display : 'none' };
         this.m_markers.push(bikeTopoMarker);
+
+        var walkTopoMarker = otp.util.OpenLayersUtils.makeMarker(fromP.x, fromP.y, {
+            type : 'fromWalkMarker',
+            mode : 'WALK'
+        });
+        walkTopoMarker.id = 'walk-topo-marker';
+        walkTopoMarker.style = { display : 'none' };
+        this.m_markers.push(walkTopoMarker);
+
     },
 
+    /** */
     assignDirectionToMarkers : function(markers) 
     {
         if (markers.length === 0) {
@@ -557,238 +575,94 @@ otp.planner.Itinerary = {
     /** */
     getTreeNodes : function(clickCallback, scope)
     {
-        return this.makeTreeNodes(this.m_legStore, this.xml, this.from, this.to, clickCallback, scope);
+        return this.makeTreeNodes(clickCallback, scope);
     },
 
-  /**
-    * this method creates new tree nodes, based on the leg store.  each time an itinerary is  
-    * selected, this method is called to populate the legs of the itinerary
-    * 
-    * m_treeNodes = makeTreeNodes(m_legStore, m_itin, from, to, this.legClick);
-    *  
-    * NOTE: Ext tree nodes (v2 RC1) will not render afert being 'deleted' from their parent.
-    *       So we only render a copy of the trip nodes...cleanup is provided via clearNodes above.
-    */
-    makeTreeNodes : function(store, itin, from, to, clickCallback, scope)
-    {
-        var fmTxt = this.templates.TP_START.applyTemplate(from.data);
-        var toTxt = this.templates.TP_END.applyTemplate(to.data);
-
-        var fmId  = this.id + '-' + otp.planner.Utils.FROM_ID;
-        var toId  = this.id + '-' + otp.planner.Utils.TO_ID;
-        var tpId  = this.id + '-' + otp.planner.Utils.TRIP_ID;
-        
-        var containsBikeMode    = false;
-        var containsCarMode     = false;
-        var containsTransitMode = false;
-
-        var retVal = new Array();
-        var numLegs = store.getCount();
-
-        // step 1: start node
-        retVal.push(otp.util.ExtUtils.makeTreeNode({id: fmId, text: fmTxt, cls: 'itiny magnify', iconCls: 'start-icon', leaf: true}, clickCallback, scope));
-
-        // step 2: leg and (sub-leg) instruction nodes
-        for(var i = 0; i < numLegs; i++)
-        {
-            var leg = store.getAt(i);
-            var text;
-            var verb;
-            var sched     = null;
-            var mode      = leg.get('mode').toLowerCase();
-            var agencyId  = leg.get('agencyId');
-            var routeId   = leg.get('routeShortName');
-
-            var isLeaf = true;
-            var instructions = null;
-            var legId = this.id + this.LEG_ID + i;
-            leg.data.showStopIds = this.showStopIds;
-
-            // step 2a: build either a transit leg node, or the non-transit turn-by-turn instruction nodes
-            if(otp.util.Modes.isTransit(mode))
-            {
-                leg.set('routeName', this.makeRouteName(leg));
-                text = this.templates.applyTransitLeg(leg);
-                containsTransitMode = true;
-            }
-            else
-            {
-                var template = 'TP_WALK_LEG';
-                if (mode === 'walk') {
-                    verb = this.locale.instructions.walk_toward;
-                }
-                else if (mode === 'bicycle') {
-                    verb = this.locale.instructions.bike_toward;
-                    template = 'TP_BICYCLE_LEG';
-                    containsBikeMode = true;
-                } else if (mode === 'drive') {
-                    verb = this.locale.instructions.drive_toward;
-                    template = 'TP_CAR_LEG';
-                    containsDriveMode = true;
-                } else {
-                    verb = this.locale.instructions.move_toward;
-                }
-                if (!leg.data.formattedSteps)
-                {
-                    instructions = this.makeInstructionStepsNodes(leg.data.steps, verb, legId);
-                    leg.data.formattedSteps = "";
-                    isLeaf = false;
-                }
-                text = this.templates[template].applyTemplate(leg.data);
-            }
-
-            // step 2c: make this leg (tree) node
-            var icon = otp.util.imagePathManager.imagePath({mode:mode, agencyId:agencyId, route:routeId});
-            var cfg = {id:legId, text:text, cls:'itiny magnify', icon:icon, iconCls:'itiny-inline-icon', leaf:isLeaf};
-            if(numLegs > 2)
-            {
-                // show/hide instructions if our trip has more than 2 legs 
-                cfg.expanded = false;
-                cfg.singleClickExpand = true;
-            }
-            var node = otp.util.ExtUtils.makeTreeNode(cfg, clickCallback, scope);
-
-            // step 2d: if we have instruction sub-nodes, add them to the tree...
-            if (instructions && instructions.length >= 1)
-            {
-                node.appendChild(instructions);
-            }
-
-            retVal.push(node);
-        }
-
-        // step 3: build details node's content 
-        var tripDetailsDistanceVerb = this.locale.instructions.walk_verb;
-        if(containsBikeMode)
-            tripDetailsDistanceVerb = this.locale.instructions.bike_verb;
-        else if(containsCarMode) 
-            tripDetailsDistanceVerb = this.locale.instructions.car_verb;
-        var tripDetailsData = Ext.apply({}, itin.data, {distanceVerb: tripDetailsDistanceVerb});
-        var tpTxt = this.templates.TP_TRIPDETAILS.applyTemplate(tripDetailsData);
-
-        // step 4: end and details nodes
-        retVal.push(otp.util.ExtUtils.makeTreeNode({id: toId, text: toTxt, cls: 'itiny magnify', iconCls: 'end-icon', leaf: true}, clickCallback, scope));
-        retVal.push(otp.util.ExtUtils.makeTreeNode({id: tpId, text: tpTxt, cls: 'trip-details-shell', iconCls: 'no-icon', leaf: true}, clickCallback, scope));
-
-        return retVal;
-    },
-
-
-    /** 
-     * pass in a transit leg record, and build the route name from GTFS route-short-name and route-long-name
-     * e.g, TriMet has route-short-name=1 and route-long-name=Vermont...thus the full route name of 1-Vermont
-     *
-     * @see override this method for your own template
-     */
-    makeRouteName : function(rec)
-    {
-        var routeName = rec.get('routeShortName');
-
-        // step 1: configure parameter must be set to true
-        if(this.useRouteLongName)
-        {
-            var routeLongName = rec.get('routeLongName');
-    
-            // step 2: make sure routeName has something
-            if(routeName == null || routeName.length < 1)
-                routeName = routeLongName;
-    
-            // step 3: construct route name as combo of routeName (id) and routeLongName
-            if(routeLongName && routeLongName != routeName)
-                routeName = routeName + "-" + routeLongName;
-        }
-        return routeName;
-    },
-
-
-    /** make bike / walk turn by turn narrative */
-    makeInstructionStepsNodes : function(steps, verb, legId)
+    /**  */
+    makeTreeNodes : function(clickCallback, scope)
     {
         var retVal = [];
-        var isFirstStep = true;
 
-        var stepNum = 1;
-        for (var i = 0; i < steps.length; i++)
+        // step 1: get itinerary data
+        var cfg  = otp.inherit(null, this);
+        cfg.store=this.m_legStore;
+        cfg.modes=this.m_modes;
+        cfg.details=this.xml;
+        var itin = otp.planner.ItineraryDataFactoryStatic.factory(cfg);
+
+        // step 2: start node
+        retVal.push(otp.util.ExtUtils.makeTreeNode(itin.from, clickCallback, scope));
+
+        // step 3: itinerary legs
+        if(itin.steps)
+        for(var i = 0; i < itin.steps.length; i++)
         {
-            var step = steps[i];
-            if (step.streetName == "street transit link")
+            // step 3a: get the step
+            var step = itin.steps[i];
+
+            // step 3b: make this leg (tree) node
+            var node;
+            if(!step.leaf && itin.steps.length > 2)
             {
-                // TODO: Include explicit instruction about entering/exiting transit station or stop?
-                continue;
+                // show/hide instructions if our trip has more than 2 legs 
+                step.expanded = false;
+                step.singleClickExpand = true;
+                var id = 'showDetails-' + this.triptab.id + "-" + step.id;
+                step.text += '<div id="' + id + '" class="show-hide-details"> ' + this.templates.getShowDetails() + '</div>';
+                node = otp.util.ExtUtils.makeTreeNode(step, clickCallback, scope);
+                node.showDetailsId = id;
+                node.showing = false;
+            }
+            else
+            {
+                node = otp.util.ExtUtils.makeTreeNode(step, clickCallback, scope);
             }
 
-            this.addNarrativeToStep(step, verb, stepNum);
-            
-            var cfg = {id:legId + "-" + i, text:step.narrative, cls:'itiny-steps', icon:step.iconURL, iconCls:'itiny-inline-icon', leaf:true};
-            var node = otp.util.ExtUtils.makeTreeNode(cfg, this.instructionClickCB, this, this.instructionHoverCB, this.instructionOutCB);
-            node.m_step = step;
-            stepNum++;
+            // step 3c: if we have instruction sub-nodes, add them to the tree...
+            if(!step.leaf)
+            {
+                // step 3c: loop through step instructions, creating tree nodes for each...
+                var inodes = [];
+                for(var j = 0; j < step.instructions.length; j++)
+                {
+                    var inst  = step.instructions[j];
+                    var inode = otp.util.ExtUtils.makeTreeNode(inst, this.instructionClickCB, this, this.instructionHoverCB, this.instructionOutCB);
+                    inode.m_step = inst.originalData;
+                    inodes.push(inode);
+                }
+                node.appendChild(inodes);
+            }
 
+            // step 3d: push this tree node 
             retVal.push(node);
         }
+
+        // step 4: close the itinerary
+        retVal.push(otp.util.ExtUtils.makeTreeNode(itin.to, clickCallback, scope));
+
+        // step 5: optional mode note and details nodes
+        if(itin.notes)
+        {
+            retVal.push(otp.util.ExtUtils.makeTreeNode(itin.notes, clickCallback, scope));
+        }
+        retVal.push(otp.util.ExtUtils.makeTreeNode(itin.details, clickCallback, scope));
 
         return retVal;
     },
 
-    /** adds narrative and direction information to the step */ 
-    addNarrativeToStep : function(step, verb, stepNum, dontEditStep)
-    {
-        var stepText   = "<strong>" + stepNum + ".</strong> ";
-        var iconURL  = null;
-
-        var relativeDirection = step.relativeDirection;
-        if (relativeDirection == null || stepNum == 1)
-        {
-            var absoluteDirectionText = this.locale.directions[step.absoluteDirection.toLowerCase()];
-            stepText += verb + ' <strong>' + absoluteDirectionText + '</strong> ' + this.locale.directions.on;
-            iconURL = otp.util.ImagePathManagerUtils.getStepDirectionIcon();
-        }
-        else 
-        {
-            relativeDirection = relativeDirection.toLowerCase();
-            iconURL = otp.util.ImagePathManagerUtils.getStepDirectionIcon(relativeDirection);
-
-            var directionText = otp.util.StringFormattingUtils.capitolize(this.locale.directions[relativeDirection]);
-            if (relativeDirection == "continue")
-            {
-                stepText += directionText;
-            }
-            else if (step.stayOn == true)
-            {
-                stepText += directionText + " " + this.locale.directions['to_continue'];
-            }
-            else
-            {
-                stepText += directionText;
-                if (step.exit != null) {
-                    stepText += " " + this.locale.ordinal_exit[step.exit] + " ";
-                }
-                stepText += " " + this.locale.directions['on'];
-            }
-        }
-        stepText += ' <strong>' + step.streetName + '</strong>';
-        stepText += ' - ' + otp.planner.Utils.prettyDistance(step.distance) + '';
-
-        // edit the step object (by default, unless otherwise told)
-        if(!dontEditStep)
-        {
-            step.narrative  = stepText;
-            step.iconURL    = iconURL;
-            step.bubbleHTML = '<img src="' + iconURL + '"></img> ' + ' <strong>' + stepNum + '.</strong> ' + step.streetName;
-            step.bubbleLen  = step.streetName.length + 3;
-        }
-
-        return stepText;
-    },
+    outCount : 0,
+    clicked  : null,
 
     /** */
     instructionClickCB : function(node, m)
     {
         if(node && node.m_step)
         {
+            this.clicked  = node;
+            this.outCount = 0;
+            this.map.tooltipCleared = false;
             this.map.pan(node.m_step.lon, node.m_step.lat);
             this.instructionHoverCB(node, m);
-            node.m_clicked = true;
         }
     },
 
@@ -803,24 +677,27 @@ otp.planner.Itinerary = {
     },
 
     /** mouse out callback */
-    clickCount : 0,
     instructionOutCB : function(node, m)
     {
-        if(!node.m_clicked)
-        {
-            this.map.tooltipHide();
-            this.map.streetviewHide();
-            this.clickCount = 0;
-        }
-        if(this.clickCount >= 3) 
-        {
-            node.m_clicked = false;
-        }
-        this.clickCount++;
-    },
+        // clear all map tooltips
+        this.map.tooltipHide();
+        this.map.streetviewHide();
 
+        // stopping condition for clicked tooltips
+        if(this.outCount >= 5 || this.map.tooltipCleared) 
+        {
+            this.clicked = null;
+        }
+        this.outCount++;
+
+        // if we had an earlier click event (and haven't yet exceeded the outCount), show the clicked tooltip again 
+        if(this.clicked)
+        {
+            // reset the map tool-tip back to our 'clicked' node 
+            this.instructionHoverCB(this.clicked);
+        }
+    },
 
     CLASS_NAME: "otp.planner.Itinerary"
 };
-
 otp.planner.Itinerary = new otp.Class(otp.planner.Itinerary);

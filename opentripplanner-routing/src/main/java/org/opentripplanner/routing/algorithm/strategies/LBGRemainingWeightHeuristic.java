@@ -16,12 +16,11 @@ package org.opentripplanner.routing.algorithm.strategies;
 import java.util.HashMap;
 
 import org.opentripplanner.common.model.T2;
-import org.opentripplanner.routing.core.GenericVertex;
-import org.opentripplanner.routing.core.Graph;
 import org.opentripplanner.routing.core.LowerBoundGraph;
 import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.location.StreetLocation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,7 +50,7 @@ public class LBGRemainingWeightHeuristic implements RemainingWeightHeuristic {
 
     double[] weights;
 
-    public LBGRemainingWeightHeuristic(Graph g, TraverseOptions opt) {
+    public LBGRemainingWeightHeuristic(Graph g, RoutingRequest opt) {
         GraphAndDirection key = new GraphAndDirection(g, opt.isArriveBy());
         this.lbg = lbgCache.get(key);
         if (this.lbg == null) {
@@ -81,7 +80,7 @@ public class LBGRemainingWeightHeuristic implements RemainingWeightHeuristic {
 
     @Override
     public double computeReverseWeight(State s, Vertex target) {
-        int index = ((GenericVertex) s.getVertex()).getIndex();
+        int index = s.getVertex().getIndex();
         if (index < weights.length) {
             double h = weights[index];
             // System.out.printf("h=%f at %s\n", h, s.getVertex());

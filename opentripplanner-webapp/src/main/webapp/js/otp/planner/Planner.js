@@ -24,29 +24,26 @@ otp.namespace("otp.planner");
   */
 otp.planner.Planner = {
 
-    locale        : null,
+    locale                  : null,
 
     // pointer to the map / components
-    map           : null,
-    planner       : null,
-    controller    : null,
-    ui            : null,
+    map                     : null,
+    planner                 : null,
+    controller              : null,
+    ui                      : null,
 
     // configuration
     url                     : null,
+    printUrl                : null,
     poi                     : null,
     fromToOverride          : null,
     linkTemplates           : null,
-    geocoder                : null,
+    geocoder_cfg            : null,
     templates               : null,
-
-    // see config.js to override these options
-    showWheelchairForm      : null,
-    showStopIds             : null,
-    showPrintButton         : null,
-    showLinksButton         : null,
-    useOptionDependencies   : null,
-    useRouteLongName        : null,
+    routerId                : null,
+    maxTransfers            : null,
+    itineraryMessages       : null,
+    options                 : null,  // see config.js - planner.options
 
     // new tab (itineraries tabs) management
     m_tabs        : null,
@@ -59,11 +56,14 @@ otp.planner.Planner = {
     m_renderer    : null,
     m_topoRenderer : null,
 
+    // the template for the dynamic bookmarking #/ stuff
+    // will be populated when first used
+    m_hashTemplate : null,
+
     /** */
     initialize : function(config)
     {
         this.planner = this;
-        this.routerId = config.routerId;
         otp.configure(this, config);
 
         if(this.templates == null)
@@ -83,6 +83,7 @@ otp.planner.Planner = {
             enableTabScroll:   true,
             minTabWidth:       75,
             autoScroll:        false,
+            defaults:          {autoScroll: true}, 
             plugins:           new Ext.ux.TabCloseMenu()
         });
         this.m_tabPanel.on('tabchange', this.tabChange, this);
@@ -109,9 +110,8 @@ otp.planner.Planner = {
         var thisObj = this;
         this.m_forms.submitSuccess = function(){ thisObj.formSuccessCB(); };
         this.m_forms.submitFailure = function(){ thisObj.formFailureCB(); };
-
         m = this.map.getMap();
-        m.events.register('click', m, function (e) {
+            m.events.register('click', m, function (e) {
         });
     },
 
@@ -213,13 +213,28 @@ otp.planner.Planner = {
         return retVal;
     },
 
-    /** */
-    getActiveItinerary : function() {
+    /** active itinerary from TripTab object, or null if Form tab */
+    getActiveItinerary : function()
+    {
         var retVal = null;
 
         var tt = this.m_tabs[this.m_activeTabID];
         if (tt) {
             retVal = tt.getActiveItinerary();
+        }
+
+        return retVal;
+    },
+
+
+    /** return either empty obj or request object */
+    getActiveRequest : function()
+    {
+        var retVal = {};
+
+        var tt = this.m_tabs[this.m_activeTabID];
+        if(tt && tt.request) {
+            retVal = tt.request;
         }
 
         return retVal;
@@ -256,15 +271,14 @@ otp.planner.Planner = {
                   renderer     : this.m_renderer, 
                   topoRenderer : this.m_topoRenderer, 
                   templates    : this.templates, 
-                  linkTemplates: this.linkTemplates, 
+                  linkTemplates: this.linkTemplates,
+                  itineraryMessages : this.itineraryMessages,
 
                   xml : xml,
                   id  : ++this.m_tabCount, 
-                  request:request,
+                  request:request
+            };
 
-                  showPrintButton : this.showPrintButton,
-                  showLinksButton : this.showLinksButton
-            }; 
             var trip = new otp.planner.TripTab(cfg);
             var newTab = trip.getPanel();
             if(newTab && trip.isValid())
@@ -291,6 +305,29 @@ otp.planner.Planner = {
         return true;
     },
 
+    /** */
+    printCB : function(button, event)
+    {
+        // step 1: put some Planner variables in the static Print space (to share with window we're about to open up)
+        otp.planner.PrintStatic.configViaPlanner(this);
+
+        // step 2: url to the print page
+        var url = this.printUrl || 'print.html';
+
+        // step 3: add active itinerary paraters to that url (if we've got an itinerary that's active)
+        if(this.getActiveItinerary())
+        {
+            console.log("Planner.print: clone trip request object");
+            var req = otp.clone(this.getActiveRequest());
+            req.url = url;
+            url = this.templates.tripPrintTemplate.apply(req);
+        }
+
+        // step 4: call print to open new window
+        console.log("Planner.print: url " + url);
+        otp.planner.PrintStatic.print(url);
+    },
+
     /**
      *  changing tabs (both forms / trip plans) triggers events to clear the map, etc...   
      */
@@ -298,19 +335,44 @@ otp.planner.Planner = {
     {
         this.m_renderer.clear();
         var newTab = this.m_tabs[activeTab.id];
+        
+        // remove the topo graph from the south panel, if applicable 
+        var oldTab = this.m_tabs[this.m_activeTabID];
+        if(oldTab != null && oldTab.topoRenderer != null) {
+            oldTab.topoRenderer.removeFromPanel();
+        }
+
+        // draw the new tab, if applicable
         if (newTab != null) {
             this.m_activeTabID = activeTab.id;
             newTab.draw();
         } else {
             this.m_activeTabID = 0;
             this.controller.deactivate(this.CLASS_NAME);
-
-            // hide the topo map
-            if (this.ui.innerSouth.isVisible()) {
-                this.ui.innerSouth.hide();
-                this.ui.viewport.doLayout();
-            }
             this.m_forms.panelActivated();
+        }
+        
+        // hide the south panel, if empty
+        if (this.ui.innerSouth.isVisible()  && this.ui.innerSouth.getEl().dom.childNodes.length == 0) {
+            this.ui.innerSouth.hide();
+            this.ui.viewport.doLayout();
+        }
+
+        // update the dynamic link to the current trip plan
+        // TODO: is the 'plan a trip' tab always tab 0?
+        if (this.m_activeTabID === 0) {
+            location.hash = '#/';
+            document.title = 'OpenTripPlanner Map';
+        }
+        else {
+            // we're on a TP tab
+            // template for the dynamic url
+            if (this.m_hashTemplate == null) {
+                this.m_hashTemplate = new Ext.XTemplate('#/' + otp.planner.ParamTemplate).compile();
+            }
+            location.hash = this.m_hashTemplate.apply(newTab.request);
+            // update the title so folks bookmark something meaningful
+            document.title = newTab.getTitle() + ' - OpenTripPlanner Map';
         }
     },
 

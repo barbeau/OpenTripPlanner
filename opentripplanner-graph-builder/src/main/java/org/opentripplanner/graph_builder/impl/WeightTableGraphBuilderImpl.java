@@ -13,9 +13,13 @@
 
 package org.opentripplanner.graph_builder.impl;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+
 import org.opentripplanner.graph_builder.services.GraphBuilder;
 import org.opentripplanner.routing.algorithm.strategies.WeightTable;
-import org.opentripplanner.routing.core.Graph;
+import org.opentripplanner.routing.graph.Graph;
 
 /**
  * Add a weight table to a graph, which provides information to the
@@ -27,8 +31,16 @@ public class WeightTableGraphBuilderImpl implements GraphBuilder {
 	private Double maxWalkSpeed = null;
         private Double maxWalkDistance = null;
 
+        public List<String> provides() {
+            return Arrays.asList("weightTable");
+        }
+
+        public List<String> getPrerequisites() {
+            return Arrays.asList("linking");
+        }
+        
 	@Override
-	public void buildGraph(Graph graph) {
+	public void buildGraph(Graph graph, HashMap<Class<?>, Object> extra) {
 		WeightTable wt = new WeightTable(graph);
 		if (maxWalkSpeed != null) {
 			wt.setMaxWalkSpeed(maxWalkSpeed);
@@ -67,5 +79,10 @@ public class WeightTableGraphBuilderImpl implements GraphBuilder {
         
         public double getMaxWalkDistance() {
             return maxWalkDistance;
+        }
+
+        @Override
+        public void checkInputs() {
+            //no inputs
         }
 }

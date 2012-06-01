@@ -23,14 +23,13 @@ otp.core.MapSingleton = null;
  */
 otp.core.MapStatic = {
 
-//http://maps.opengeo.org/geowebcache/service/wms?LAYERS=openstreetmap&FORMAT=image%2Fpng&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&STYLES=&EXCEPTIONS=application%2Fvnd.ogc.se_inimage&SRS=EPSG:4326&BBOX=-8240523.1442212,4972687.3114282,-8238077.1593164,4975133.296333&WIDTH=256&HEIGHT=256
-
-	routerId          : null,
+    routerId          : null,
     locale            : null,
     map               : null,
     baseLayer         : null,
     mapDiv            : "map",
-    
+    metadataUrl       : '/opentripplanner-api-webapp/ws/metadata',
+
     // list of functions that will be called before/after all features on the map are removed
     beforeAllFeaturesRemoved: [],
     allFeaturesRemoved: [],
@@ -39,10 +38,11 @@ otp.core.MapStatic = {
     options          : null,
     baseLayerOptions : null,
     THIS             : null,
-    CLOSE_ZOOM       : 18,
+    CLOSE_ZOOM       : 17,
     tooltipLinks     : true,
+    tooltipCleared   : true,
 
-    /**
+    /*
      * An OpenLayers.Bounds object that defines the default extent used when
      * displaying the map.
      * 
@@ -61,6 +61,7 @@ otp.core.MapStatic = {
     permaLinkEnabled  : false,
     historyEnabled    : true,
     rightClickZoom    : true,
+    layerSwitchEnabled: false,
 
     /*
      * Projections - neither should need changing. displayProjection is only
@@ -75,6 +76,10 @@ otp.core.MapStatic = {
      * @param controls:null to get the default control (or supply an array of custom controls)
      * @param numZoomLevels can be increased to 14...but not recommended for a public map.
      * 
+     * IMPORTANT: when adding new layers to this OL map, make sure you add layer.OTP_LAYER = true
+     *            if you expect the layer to be cleared by _removeAllFeatures() below (e.g., things
+     *            like OTP route highlight layers, etc...).
+     * 
      * @methodOf otp.Map
      */
     initialize : function(config)
@@ -85,85 +90,96 @@ otp.core.MapStatic = {
         if (this.baseLayer == null) {
             this.baseLayer = otp.util.OpenLayersUtils.makeMapBaseLayer(this.map, this.baseLayerOptions);
         } else {
-            this.map.addLayer(this.baseLayer);
+            this.map.addLayers(this.baseLayer);
+            if (this.baseLayer.length > 1) {
+                this.layerSwitchEnabled=true;
+            }
         }
         this.map.setBaseLayer(this.baseLayer, true);
+        this.map.events.register('click', this, this.closeAllPopupsCB);
 
         otp.core.MapSingleton = this;
-        var self = this;
         otp.core.MapStatic.THIS = this;
 
         // if we have an empty array of controls, then add the defaults
         if (this.options.controls != null && this.options.controls.length == 0)
         {
-            this.options.controls = otp.util.OpenLayersUtils.defaultControls(this.map, this.zoomWheelEnabled, this.handleRightClicks, this.permaLinkEnabled, this.attribution, this.historyEnabled);
+            this.options.controls = otp.util.OpenLayersUtils.defaultControls(this.map, this.zoomWheelEnabled, this.handleRightClicks, this.permaLinkEnabled, this.attribution, this.historyEnabled, this.layerSwitchEnabled);
         }
-        var pageParameters = Ext.urlDecode(window.location.search.substring(1));
-        if (pageParameters["fromPlace"] !== undefined) {
-            console.log(pageParameters.properties);
-            return;
-        }
-        if (this.defaultExtent === 'automatic') {
-            // ask the server for the extent
 
+        var layerLoaded = false;
+        var extentRetrieved = false;
+        var self = this;
+
+        // either ask the server for the extent, or...
+        if(this.defaultExtent != null && this.defaultExtent === 'automatic')
+        {
             // these two variables get enclosed over
             // the map gets zoomed when they are both true so that proper zoom levels
             // get calculated
             // without these checks, we were getting issues where the map would be zoomed
             // all the way out when the default extent was specified
-            var layerLoaded = false;
-            var extentRetrieved = false;
             var _params = {};
-            if (this.routerId)
-                _params = { routerId : this.routerId };
-                OpenLayers.Request.GET({
-                    // TODO: store the base /ws URL someplace else
-                    url: '/opentripplanner-api-webapp/ws/metadata',
-                    params: _params,
-                    // TODO: switch other ajax requests from XML to JSON?
-                    headers: {Accept: 'application/json'},
-                    success : function(xhr) 
-                    {
-                          var metadata = Ext.util.JSON.decode(xhr.responseText);
-                          self.defaultExtent = new OpenLayers.Bounds(
-                                  metadata.minLongitude,
-                                  metadata.minLatitude,
-                                  metadata.maxLongitude,
-                                  metadata.maxLatitude
-                          );
-                          extentRetrieved = true;
-                          if (layerLoaded) {
-                              self.zoomToDefaultExtent();
-                          }
-                    },
-                    failure: function(xhr)
-                    {
-                        console.log('failure retrieving default extent');
-                    }
-            });
+            if(this.routerId)
+                _params.routerId = this.routerId;
 
-            var zoomOnFirstLoad = function() {
-                layerLoaded = true;
-                if (extentRetrieved) {
-                    self.zoomToDefaultExtent();
+            OpenLayers.Request.GET({
+                url: self.metadataUrl,
+                params: _params,
+                headers: {Accept: 'application/json'},
+                success : function(xhr) 
+                {
+                      var metadata = Ext.util.JSON.decode(xhr.responseText);
+                      self.defaultExtent = new OpenLayers.Bounds(
+                              metadata.minLongitude,
+                              metadata.minLatitude,
+                              metadata.maxLongitude,
+                              metadata.maxLatitude
+                      );
+                      self.defaultExtent.transform(self.dataProjection, self.map.getProjectionObject());
+                      extentRetrieved = true;
+                      if(layerLoaded){
+                          self.zoomToDefaultExtent();
+                      }
+                },
+                failure: function(xhr)
+                {
+                    console.log('failure retrieving default extent');
                 }
-                self.map.baseLayer.events.un({loadend: zoomOnFirstLoad});
-            };
-            self.map.baseLayer.events.on({loadend: zoomOnFirstLoad});
-        } else {
-            var zoomOnFirstLoad = function() {
-                self.zoomToDefaultExtent();
-                self.map.baseLayer.events.un({loadend: zoomOnFirstLoad});
-            };
-            self.map.baseLayer.events.on({loadend: zoomOnFirstLoad});
+            });
+        } 
+        else if (this.defaultExtent != null)
+        {
+            // explicitly defined extent
+            this.defaultExtent.transform(this.dataProjection, this.map.getProjectionObject());
+            extentRetrieved = true;
         }
+
+        // TODO: rethink this ... fragile code
+        var zoomOnFirstLoad = function()
+        {
+            layerLoaded = true;
+            if (extentRetrieved) {
+                self.zoomToDefaultExtent();
+            }
+            self.map.baseLayer.events.un({loadend: zoomOnFirstLoad});
+        };
+        self.map.baseLayer.events.on({loadend: zoomOnFirstLoad});
     },
 
+
     /** */
-    zoomToDefaultExtent : function() {
-        if (this.defaultExtent && this.defaultExtent !== 'automatic') {
-            this.zoomToExtent(this.defaultExtent.transform(this.dataProjection, this.map.getProjectionObject()));
+    zoomToDefaultExtent : function()
+    {
+        try
+        {
+            if(this.defaultExtent && this.defaultExtent !== 'automatic')
+            {
+                this.zoomToExtent(this.defaultExtent);
+            }
         }
+        catch(e)
+        {}
     },
 
 
@@ -244,10 +260,8 @@ otp.core.MapStatic = {
     /** */
     clear : function()
     {
-        if (this.defaultExtent && this.defaultExtent !== 'automatic') {
-            this.updateSize();
-            otp.core.MapStatic.THIS.map.zoomToDefaultExtent();
-        }
+        this.zoomToDefaultExtent();
+        this.cleanMap();
     },
 
     /**
@@ -260,20 +274,21 @@ otp.core.MapStatic = {
         {
             return this.defaultExtent;
         }
+        var self = this;
         OpenLayers.Request.GET({
-            // TODO: store the base /ws URL someplace else
-            url : '/opentripplanner-api-webapp/ws/metadata',
-            // TODO: switch other ajax requests from XML to JSON?
+            url : self.metadataUrl,
             headers: {Accept: 'application/json'},
             success : function(xhr) 
                       {
                           var metadata = Ext.util.JSON.decode(xhr.responseText);
-                          otp.core.MapSingleton.defaultExtent = new OpenLayers.Bounds(
+                          self.defaultExtent = new OpenLayers.Bounds(
                                   metadata.minLongitude,
                                   metadata.minLatitude,
                                   metadata.maxLongitude,
                                   metadata.maxLatitude
                           );
+                          self.defaultExtent.transform(self.dataProjection, self.map.getProjectionObject());
+                          otp.core.MapSingleton.defaultExtent = self.defaultExtent;
                       },
             failure : function(xhr)
                       {
@@ -283,7 +298,7 @@ otp.core.MapStatic = {
         });
         return null;
     },
-    
+
     /** */
     centerMapAtPixel: function(x, y)
     {
@@ -309,6 +324,12 @@ otp.core.MapStatic = {
     },
 
     /** */
+    getZoom : function()
+    {
+        return this.map.getZoom();
+    },
+
+    /** */
     zoom : function(x, y, zoom, minZoom, maxZoom)
     {
         if(minZoom == null)
@@ -330,7 +351,10 @@ otp.core.MapStatic = {
     {
         var self = otp.core.MapStatic.THIS;
         if(!zoom)
-            zoom=self.CLOSE_ZOOM;
+        {
+            self.CLOSE_ZOOM = self.map.getNumZoomLevels() - 1; 
+            zoom = self.CLOSE_ZOOM;
+        }
 
         // pan before zoom
         if(x && y)
@@ -344,6 +368,8 @@ otp.core.MapStatic = {
     {
         otp.util.OpenLayersUtils.pan(this.map, x, y);
     },
+
+// TODO : shouldn't this be in a spot like POI.js (there's a planner/poi, but nothing generic to the map right now, so guess that's why I put it here, but...) 
 
     /** */
     tooltip : function(x, y, html, contentSize)
@@ -370,22 +396,42 @@ otp.core.MapStatic = {
 
             // zoom in link if we're close in, else show the zoom out
             var zoom = "";
-            if(self.map.getZoom() < (self.CLOSE_ZOOM - 1))
-                zoom = ' <a href="#" onClick="otp.core.MapStatic.zoomAllTheWayIn(' + x + ',' + y  + ');">' + self.locale.contextMenu.zoomInHere + '</a>';
+            if(self.map.getZoom() < self.CLOSE_ZOOM)
+                zoom = ' <a href="javascript:void;" onClick="otp.core.MapStatic.zoomAllTheWayIn(' + x + ',' + y  + ');">' + self.locale.contextMenu.zoomInHere + '</a>';
             else
-                zoom = ' <a href="#" onClick="otp.core.MapStatic.zoomOut();">' + self.locale.contextMenu.zoomOutHere + '</a>';
+                zoom = ' <a href="javascript:void;" onClick="otp.core.MapStatic.zoomOut();">' + self.locale.contextMenu.zoomOutHere + '</a>';
 
-            // if content is shorter than 25 characters, we have tooltip space, so break the links to next line 
-            if(contentSize && contentSize <= 25)
-                html += '<br/>';
-            else 
-                html += ' ';
+            // IE can't do streetview in these map tooltips (freeze's the browser)
+            if(Ext.isIE)
+                this.noStreetview = true;
+
+            var streetview = null;
+            if(!this.noStreetview)
+            {
+                // if content is longer than 30 characters, we lack tooltip space, so don't break the links to next line nor use the (@Google)
+                var svConf = {name:'sv', x:x, y:y};
+                if(contentSize && contentSize <= 30)
+                {
+                    html += '<br/>';
+                    svConf.name = 'Streetview (&copy; Google)'
+                }
+                else
+                { 
+                    html += ' ';
+                    svConf.name = 'Streetview';
+                }
+                streetview = otp.planner.Templates.THIS.streetviewTemplate.applyTemplate(svConf);
+            }
+
 
             // append links to tooltip content
-            html += '<span class="popLinks">' 
-                 +  zoom
-                 +  ' | <a href="#" onClick="otp.core.MapStatic.streetview(' + x + ',' + y  + ');">Streetview (&copy; Google)</a>'
-                 +  '</span>';
+            html += '<span class="popLinks">' +  zoom; 
+
+            if(streetview)
+            {
+                 html += ' | ' + streetview
+            }
+            html += '</span>';
         }
 
         self.tooltipPopup.setContentHTML(html);
@@ -437,17 +483,31 @@ otp.core.MapStatic = {
             self.streetviewPopup.hide()
     },
 
+    /** */
+    cleanMap : function()
+    {
+        this.closeAllPopups()
+        this._removeAllFeatures();
+    },
+
     /** hide / close anything on the map */
     closeAllPopups : function()
     {
         this.tooltipHide();
         this.streetviewHide();
+        this.tooltipCleared = true;
+    },
+
+    /** event callback --- override to clear popups */
+    closeAllPopupsCB : function()
+    {
+        this.closeAllPopups();
     },
 
     /**
-     * Remove all features from non base layers on the map
+     * Remove all OTP features from non base layers on the map
      */
-    removeAllFeatures : function()
+    _removeAllFeatures : function()
     {
         // mini events system
         // if this expands some more, we should have a more proper event system
@@ -458,9 +518,10 @@ otp.core.MapStatic = {
         for (var i = 0; i < this.map.layers.length; i++)
         {
             var layer = this.map.layers[i];
-            if (!layer.isBaseLayer)
+            if (!layer.isBaseLayer && layer.OTP_LAYER)
             {
-                if (typeof layer.removeFeatures === 'function') {
+                if (layer.isVector)
+                {
                     layer.removeFeatures(layer.features);
                 }
             }

@@ -15,11 +15,19 @@ package org.opentripplanner.graph_builder.impl;
 
 import static org.opentripplanner.common.IterableLibrary.filter;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+
+import org.opentripplanner.common.geometry.DistanceLibrary;
 import org.opentripplanner.graph_builder.services.GraphBuilder;
 import org.opentripplanner.routing.core.EdgeNarrative;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation;
+import org.opentripplanner.routing.core.GraphBuilderAnnotation.Variety;
+import org.opentripplanner.routing.edgetype.HopEdge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,14 +42,26 @@ import com.vividsolutions.jts.geom.Geometry;
  */
 public class CheckGeometryGraphBuilderImpl implements GraphBuilder {
 
+
+    /** An set of ids which identifies what stages this graph builder provides (i.e. streets, elevation, transit) */
+    public List<String> provides() {
+        return Collections.emptyList();
+    }
+
+    /** A list of ids of stages which must be provided before this stage */
+    public List<String> getPrerequisites() {
+        return Arrays.asList("streets");
+    }
+    
     private static final Logger _log = LoggerFactory.getLogger(CheckGeometryGraphBuilderImpl.class);
+    private static final double MAX_VERTEX_SHAPE_ERROR = 100;
 
     @Override
-    public void buildGraph(Graph graph) {
-        for (GraphVertex gv : graph.getVertices()) {
-            Vertex v = gv.vertex;
-            if (Double.isNaN(v.getCoordinate().x) || Double.isNaN(v.getCoordinate().y)) {
-                _log.warn("Vertex " + v + " has NaN location; this will cause doom.");
+    public void buildGraph(Graph graph, HashMap<Class<?>, Object> extra) {
+        for (Vertex gv : graph.getVertices()) {
+            if (Double.isNaN(gv.getCoordinate().x) || Double.isNaN(gv.getCoordinate().y)) {
+                _log.warn("Vertex " + gv + " has NaN location; this will cause doom.");
+                _log.warn(GraphBuilderAnnotation.register(graph, Variety.BOGUS_VERTEX_GEOMETRY, gv));
             }
             
             for (EdgeNarrative e : filter(gv.getOutgoing(),EdgeNarrative.class)) {
@@ -51,11 +71,32 @@ public class CheckGeometryGraphBuilderImpl implements GraphBuilder {
                 }
                 for (Coordinate c : g.getCoordinates()) {
                     if (Double.isNaN(c.x) || Double.isNaN(c.y)) {
-                        _log.warn("Edge " + e + " has bogus geometry");
+                        _log.warn(GraphBuilderAnnotation.register(graph, Variety.BOGUS_EDGE_GEOMETRY, e));
+                    }
+                }
+                if (e instanceof HopEdge) {
+                    Coordinate edgeStartCoord = e.getFromVertex().getCoordinate();
+                    Coordinate edgeEndCoord = e.getToVertex().getCoordinate();
+                    Coordinate[] geometryCoordinates = g.getCoordinates();
+                    if (geometryCoordinates.length < 2) {
+                        _log.warn(GraphBuilderAnnotation.register(graph, Variety.BOGUS_EDGE_GEOMETRY, e));
+                        continue;
+                    }
+                    Coordinate geometryStartCoord = geometryCoordinates[0];
+                    Coordinate geometryEndCoord = geometryCoordinates[geometryCoordinates.length - 1];
+                    if (DistanceLibrary.distance(edgeStartCoord, geometryStartCoord) > MAX_VERTEX_SHAPE_ERROR) {
+                        _log.warn(GraphBuilderAnnotation.register(graph, Variety.VERTEX_SHAPE_ERROR, e));
+                    } else if (DistanceLibrary.distance(edgeEndCoord, geometryEndCoord) > MAX_VERTEX_SHAPE_ERROR) {
+                        _log.warn(GraphBuilderAnnotation.register(graph, Variety.VERTEX_SHAPE_ERROR, e));
                     }
                 }
             }
         }
 
+    }
+
+    @Override
+    public void checkInputs() {
+        //no inputs to check
     }
 }

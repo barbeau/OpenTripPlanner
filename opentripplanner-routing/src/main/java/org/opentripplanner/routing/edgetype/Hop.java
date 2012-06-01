@@ -17,20 +17,19 @@ import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.Stop;
 import org.onebusaway.gtfs.model.StopTime;
 import org.onebusaway.gtfs.model.Trip;
+import org.opentripplanner.common.geometry.DistanceLibrary;
+import org.opentripplanner.common.geometry.GeometryUtils;
 import org.opentripplanner.gtfs.GtfsLibrary;
-import org.opentripplanner.routing.core.AbstractEdge;
 import org.opentripplanner.routing.core.EdgeNarrative;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.impl.DistanceLibrary;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.AbstractEdge;
+import org.opentripplanner.routing.graph.Vertex;
 
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Geometry;
-import com.vividsolutions.jts.geom.GeometryFactory;
-import com.vividsolutions.jts.geom.PrecisionModel;
 
 public class Hop extends AbstractEdge implements OnBoardForwardEdge, OnBoardReverseEdge, HopEdge {
 
@@ -72,16 +71,19 @@ public class Hop extends AbstractEdge implements OnBoardForwardEdge, OnBoardReve
     	StateEditor s1 = s0.edit(this, en);
     	s1.incrementTimeInSeconds(elapsed);
     	s1.incrementWeight(elapsed);
-        s1.setZone(getEndStop().getZoneId());
+        if (s0.getOptions().isArriveBy())
+            s1.setZone(getStartStop().getZoneId());
+        else
+            s1.setZone(getEndStop().getZoneId());
         s1.setRoute(start.getTrip().getRoute().getId());
         return s1.makeState();
     }
 
-    public double weightLowerBound(TraverseOptions options) {
+    public double weightLowerBound(RoutingRequest options) {
     	return timeLowerBound(options);
     }
 
-    public double timeLowerBound(TraverseOptions options) {
+    public double timeLowerBound(RoutingRequest options) {
         return elapsed;
     }
 
@@ -117,15 +119,13 @@ public class Hop extends AbstractEdge implements OnBoardForwardEdge, OnBoardReve
     public Geometry getGeometry() {
         if (geometry == null) {
 
-            GeometryFactory factory = new GeometryFactory(new PrecisionModel(
-                    PrecisionModel.FLOATING), 4326);
             Stop stop1 = start.getStop();
             Stop stop2 = end.getStop();
 
             Coordinate c1 = new Coordinate(stop1.getLon(), stop1.getLat());
             Coordinate c2 = new Coordinate(stop2.getLon(), stop2.getLat());
 
-            geometry = factory.createLineString(new Coordinate[] { c1, c2 });
+            geometry = GeometryUtils.getGeometryFactory().createLineString(new Coordinate[] { c1, c2 });
         }
         return geometry;
     }

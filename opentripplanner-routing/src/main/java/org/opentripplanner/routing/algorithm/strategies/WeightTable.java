@@ -27,21 +27,19 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.pool.PoolableObjectFactory;
 import org.apache.commons.pool.impl.GenericObjectPool;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
-import org.opentripplanner.routing.core.TransitStop;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.core.GenericVertex;
+import org.opentripplanner.routing.core.RoutingRequest;
 import org.opentripplanner.routing.edgetype.FreeEdge;
 import org.opentripplanner.routing.edgetype.PatternBoard;
 import org.opentripplanner.routing.edgetype.PreBoardEdge;
-import org.opentripplanner.routing.pqueue.BinHeap;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
+import org.opentripplanner.common.pqueue.BinHeap;
 import org.opentripplanner.routing.spt.BasicShortestPathTree;
+import org.opentripplanner.routing.vertextype.TransitStop;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,7 +53,7 @@ public class WeightTable implements Serializable {
 			.getLogger(WeightTable.class);
 	private float[][] table;
 	private Graph g;
-	Map<GenericVertex, Integer> stopIndices;
+	Map<Vertex, Integer> stopIndices;
 	private double maxWalkSpeed;
         private double maxWalkDistance;
 	private transient int count;
@@ -63,7 +61,8 @@ public class WeightTable implements Serializable {
 	public WeightTable(Graph g) {
 		this.g = g;
 		// default max walk speed is biking speed
-		maxWalkSpeed = new TraverseOptions(TraverseMode.BICYCLE).speed; 
+		//maxWalkSpeed = new TraverseOptions(TraverseMode.BICYCLE).speed;
+		maxWalkSpeed = new RoutingRequest().getSpeed(TraverseMode.WALK);
 	}
 
 	public double getWeight(Vertex from, Vertex to) {
@@ -126,12 +125,12 @@ public class WeightTable implements Serializable {
 
 		LOG.debug("Number of vertices: " + g.getVertices().size());
 		stopVertices = new ArrayList<TransitStop>();
-		for (GraphVertex gv : g.getVertices())
-			if (gv.vertex instanceof TransitStop)
-				stopVertices.add((TransitStop) gv.vertex);
+		for (Vertex gv : g.getVertices())
+			if (gv instanceof TransitStop)
+				stopVertices.add((TransitStop) gv);
 		int nStops = stopVertices.size();
 
-		stopIndices = new IdentityHashMap<GenericVertex, Integer>(nStops);
+		stopIndices = new IdentityHashMap<Vertex, Integer>(nStops);
 		for (int i = 0; i < nStops; i++)
 			stopIndices.put(stopVertices.get(i), i);
 		LOG.debug("Number of stops: " + nStops);
@@ -153,10 +152,11 @@ public class WeightTable implements Serializable {
 				nThreads);
 
 		// make one heap and recycle it
-		TraverseOptions options = new TraverseOptions();
-		options.speed = maxWalkSpeed;
+		RoutingRequest options = new RoutingRequest();
+		// TODO LG Check this change:
+		options.setWalkSpeed(maxWalkSpeed);
 		final double MAX_WEIGHT = 60 * 60 * options.walkReluctance;
-		final double OPTIMISTIC_BOARD_COST = options.boardCost;
+		final double OPTIMISTIC_BOARD_COST = options.getBoardCostLowerBound();
 
 		// create a task for each transit stop in the graph
 		ArrayList<Callable<Void>> tasks = new ArrayList<Callable<Void>>();
@@ -184,12 +184,12 @@ public class WeightTable implements Serializable {
 	class SPTComputer implements Callable<Void> {
 
 		private GenericObjectPool heapPool;
-		private TraverseOptions options;
+		private RoutingRequest options;
 		private double OPTIMISTIC_BOARD_COST;
 		private double MAX_WEIGHT;		
 		private TransitStop origin;
 
-		SPTComputer(GenericObjectPool heapPool, TraverseOptions options,
+		SPTComputer(GenericObjectPool heapPool, RoutingRequest options,
 				final double MAX_WEIGHT, final double OPTIMISTIC_BOARD_COST,
 				TransitStop origin) {
 			this.heapPool = heapPool;
@@ -213,7 +213,7 @@ public class WeightTable implements Serializable {
 				throw new RuntimeException(e);
 			}
 
-			BasicShortestPathTree spt = new BasicShortestPathTree(500000);
+			BasicShortestPathTree spt = new BasicShortestPathTree(options);
 			State s0 = new State(origin, options);
 			spt.add(s0);
 			heap.insert(s0, s0.getWeight());
@@ -231,8 +231,7 @@ public class WeightTable implements Serializable {
 					table[oi][di] = (float) w;
 					// LOG.debug("    Dest " + u + " w=" + w);
 				}
-				GraphVertex gu = g.getGraphVertex(uVertex.getLabel());
-				for (Edge e : gu.getOutgoing()) {
+				for (Edge e : uVertex.getOutgoing()) {
 					if (!(e instanceof PreBoardEdge)) {
 						State v = e.optimisticTraverse(u);
 						if (v != null && spt.add(v))
@@ -243,19 +242,18 @@ public class WeightTable implements Serializable {
 
 			// then check what is accessible in one transit trip
 			heap.reset(); // recycle heap
-			spt = new BasicShortestPathTree(50000);
+			spt = new BasicShortestPathTree(options);
 			// first handle preboard edges
 			Queue<Vertex> q = new ArrayDeque<Vertex>(100);
 			q.add(origin);
 			while (!q.isEmpty()) {
 				Vertex u = q.poll();
-				GraphVertex gu = g.getGraphVertex(u.getLabel());
-				for (Edge e : gu.getOutgoing()) {
+				for (Edge e : u.getOutgoing()) {
 					if (e instanceof PatternBoard) {
 						Vertex v = ((PatternBoard) e).getToVertex();
 						// give onboard vertices same index as their
 						// corresponding station
-						stopIndices.put((GenericVertex) v, oi);
+						stopIndices.put(v, oi);
 						StateEditor se = (new State(u, options)).edit(e);
 						se.incrementWeight(OPTIMISTIC_BOARD_COST);
 						s0 = se.makeState();
@@ -266,7 +264,7 @@ public class WeightTable implements Serializable {
 						Vertex v = ((FreeEdge) e).getToVertex();
 						// give onboard vertices same index as their
 						// corresponding station
-						stopIndices.put((GenericVertex) v, oi);
+						stopIndices.put(v, oi);
 						q.add(v);
 					}
 				}
@@ -293,8 +291,7 @@ public class WeightTable implements Serializable {
 					}
 					continue;
 				}
-				GraphVertex gu = g.getGraphVertex(uVertex.getLabel());
-				for (Edge e : gu.getOutgoing()) {
+				for (Edge e : uVertex.getOutgoing()) {
 					// LOG.debug("        Edge " + e);
 					State v = e.optimisticTraverse(u);
 					if (v != null && spt.add(v))

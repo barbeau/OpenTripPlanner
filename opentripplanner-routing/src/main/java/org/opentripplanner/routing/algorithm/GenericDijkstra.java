@@ -13,23 +13,17 @@
 
 package org.opentripplanner.routing.algorithm;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import org.opentripplanner.routing.algorithm.strategies.ExtraEdgesStrategy;
 import org.opentripplanner.routing.algorithm.strategies.SearchTerminationStrategy;
 import org.opentripplanner.routing.algorithm.strategies.SkipEdgeStrategy;
 import org.opentripplanner.routing.algorithm.strategies.SkipTraverseResultStrategy;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
+import org.opentripplanner.routing.core.OverlayGraph;
 import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
-import org.opentripplanner.routing.pqueue.BinHeap;
-import org.opentripplanner.routing.pqueue.OTPPriorityQueue;
-import org.opentripplanner.routing.pqueue.OTPPriorityQueueFactory;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Vertex;
+import org.opentripplanner.common.pqueue.BinHeap;
+import org.opentripplanner.common.pqueue.OTPPriorityQueue;
+import org.opentripplanner.common.pqueue.OTPPriorityQueueFactory;
 import org.opentripplanner.routing.spt.BasicShortestPathTree;
 import org.opentripplanner.routing.spt.ShortestPathTree;
 import org.opentripplanner.routing.spt.ShortestPathTreeFactory;
@@ -39,9 +33,9 @@ import org.opentripplanner.routing.spt.ShortestPathTreeFactory;
  */
 public class GenericDijkstra {
 
-    private Graph graph;
+    private OverlayGraph replacementEdges;
 
-    private TraverseOptions options;
+    private RoutingRequest options;
 
     private ShortestPathTreeFactory _shortestPathTreeFactory;
 
@@ -53,15 +47,15 @@ public class GenericDijkstra {
 
     private SkipTraverseResultStrategy _skipTraverseResultStrategy;
 
-    private ExtraEdgesStrategy _extraEdgesStrategy;
-
     private boolean _verbose = false;
 
-    /**
-     */
-    public GenericDijkstra(Graph graph, TraverseOptions options) {
-        this.graph = graph;
+    public GenericDijkstra(RoutingRequest options) {
         this.options = options;
+    }
+
+    public GenericDijkstra(RoutingRequest options, OverlayGraph replacementEdges) {
+        this.options = options;
+        this.replacementEdges = replacementEdges;
     }
 
     public void setShortestPathTreeFactory(ShortestPathTreeFactory shortestPathTreeFactory) {
@@ -84,32 +78,20 @@ public class GenericDijkstra {
         _skipTraverseResultStrategy = skipTraverseResultStrategy;
     }
 
-    public void setExtraEdgesStrategy(ExtraEdgesStrategy extraEdgesStrategy) {
-        _extraEdgesStrategy = extraEdgesStrategy;
-    }
-
     public ShortestPathTree getShortestPathTree(State initialState) {
-
-        ShortestPathTree spt = createShortestPathTree();
+        ShortestPathTree spt = createShortestPathTree(options);
         OTPPriorityQueue<State> queue = createPriorityQueue();
 
         spt.add(initialState);
         queue.insert(initialState, initialState.getWeight());
 
-        Map<Vertex, List<Edge>> extraEdges = null;
-        if (_extraEdgesStrategy != null) {
-            extraEdges = new HashMap<Vertex, List<Edge>>();
-            _extraEdgesStrategy.addOutgoingEdgesForOrigin(extraEdges, initialState.getVertex());
-        }
-
         while (!queue.empty()) { // Until the priority queue is empty:
-
             State u = queue.extract_min();
-            Vertex fromv = u.getVertex();
+            Vertex u_vertex = u.getVertex();
 
             if (_verbose) {
                 System.out.println("min," + u.getWeight());
-                System.out.println(fromv);
+                System.out.println(u_vertex);
             }
 
             if (_searchTerminationStrategy != null
@@ -117,9 +99,7 @@ public class GenericDijkstra {
                     null, u, spt, options))
                         break;
 
-            Collection<Edge> outgoing = GraphLibrary.getOutgoingEdges(graph, fromv, extraEdges);
-
-            for (Edge edge : outgoing) {
+            for (Edge edge : options.isArriveBy() ? u_vertex.getIncoming() : u_vertex.getOutgoing()) {
 
                 if (_skipEdgeStrategy != null
                         && _skipEdgeStrategy.shouldSkipEdge(initialState.getVertex(), null, u, edge, spt,
@@ -147,19 +127,20 @@ public class GenericDijkstra {
 
                 }
             }
+            spt.postVisit(u);
         }
         return spt;
     }
 
     protected OTPPriorityQueue<State> createPriorityQueue() {
         if (_priorityQueueFactory != null)
-            return _priorityQueueFactory.create(graph.getVertices().size());
-        return new BinHeap<State>(graph.getVertices().size() / 2);
+            return _priorityQueueFactory.create(10);
+        return new BinHeap<State>();
     }
 
-    protected ShortestPathTree createShortestPathTree() {
+    protected ShortestPathTree createShortestPathTree(RoutingRequest options) {
         if (_shortestPathTreeFactory != null)
-            return _shortestPathTreeFactory.create();
-        return new BasicShortestPathTree();
+            return _shortestPathTreeFactory.create(options);
+        return new BasicShortestPathTree(options);
     }
 }

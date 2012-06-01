@@ -14,17 +14,15 @@
 package org.opentripplanner.routing.algorithm.strategies;
 
 import java.util.Arrays;
-import org.opentripplanner.routing.core.DirectEdge;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.GenericVertex;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
+
+import org.opentripplanner.common.pqueue.BinHeap;
 import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.AbstractVertex;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.location.StreetLocation;
-import org.opentripplanner.routing.pqueue.BinHeap;
-import org.opentripplanner.routing.services.RemainingWeightHeuristicFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +40,8 @@ public class BidirectionalRemainingWeightHeuristic implements
     private static Logger LOG = LoggerFactory.getLogger(LBGRemainingWeightHeuristic.class);
 
     Vertex target;
+    
+    double cutoff;
 
     double[] weights;
 
@@ -59,7 +59,7 @@ public class BidirectionalRemainingWeightHeuristic implements
 
     @Override
     public double computeInitialWeight(State s, Vertex target) {
-        recalculate(target, s.getOptions(), false);
+        recalculate(s.getVertex(), target, s.getOptions(), false);
         return computeForwardWeight(s, target);
     }
 
@@ -74,7 +74,7 @@ public class BidirectionalRemainingWeightHeuristic implements
             return 0;
         if (s.getWeight() < 10 * 60)
             return 0;
-        int index = ((GenericVertex) s.getVertex()).getIndex();
+        int index = s.getVertex().getIndex();
         if (index < weights.length) {
             double h = weights[index];
             // System.out.printf("h=%f at %s\n", h, s.getVertex());
@@ -87,22 +87,23 @@ public class BidirectionalRemainingWeightHeuristic implements
             return 0;
     }
 
-    private void recalculate(Vertex target, TraverseOptions options, boolean timeNotWeight) {
-        if (target != this.target) {
+    private void recalculate(Vertex origin, Vertex target, RoutingRequest options, boolean timeNotWeight) {
+        if (target != this.target || options.maxWeight > this.cutoff) {
+            LOG.debug("recalc");
             this.target = target;
-            this.nVertices = GenericVertex.getMaxIndex();
+            this.cutoff = options.maxWeight;
+            this.nVertices = AbstractVertex.getMaxIndex();
             weights = new double[nVertices];
             Arrays.fill(weights, Double.POSITIVE_INFINITY);
             BinHeap<Vertex> q = new BinHeap<Vertex>();
             long t0 = System.currentTimeMillis();
-
             if (target instanceof StreetLocation) {
-                for (DirectEdge de : ((StreetLocation) target).getExtra()) {
-                    GenericVertex gv;
+                for (Edge de : ((StreetLocation) target).getExtra()) {
+                    Vertex gv;
                     if (options.isArriveBy()) {
-                        gv = (GenericVertex) (de.getToVertex());
+                        gv = de.getToVertex();
                     } else {
-                        gv = (GenericVertex) (de.getFromVertex());
+                        gv = de.getFromVertex();
                     }
                     int gvi = gv.getIndex();
                     if (gv == target)
@@ -113,38 +114,42 @@ public class BidirectionalRemainingWeightHeuristic implements
                     q.insert(gv, 0);
                 }
             } else {
-                int i = ((GenericVertex) target).getIndex();
+                int i = target.getIndex();
                 weights[i] = 0;
                 q.insert(target, 0);
             }
             while (!q.empty()) {
                 double uw = q.peek_min_key();
                 Vertex u = q.extract_min();
-                int ui = ((GenericVertex) u).getIndex();
+                // cutting off at 2-3 hours seems to improve reaction time
+                // (this was previously not the case... #656?)
+                // of course in production this would be scaled according to the distance
+                if (uw > cutoff)
+                    break;
+                int ui = u.getIndex();
                 if (uw > weights[ui])
-                    continue;
-                //LOG.debug("Extract {} weight {}",u ,uw);
-                GraphVertex gv = g.getGraphVertex(u);
-                if (gv == null)
                     continue;
                 Iterable<Edge> edges;
                 if (options.isArriveBy())
-                    edges = gv.getOutgoing();
+                    edges = u.getOutgoing();
                 else
-                    edges = gv.getIncoming();
+                    edges = u.getIncoming();
                 for (Edge e : edges) {
-                    if (e instanceof DirectEdge) {
-                        GenericVertex v = (GenericVertex) (options.isArriveBy() ? 
-                            ((DirectEdge) e).getToVertex() : ((DirectEdge) e).getFromVertex());
-                        double vw = uw + (timeNotWeight ? 
-                                e.timeLowerBound(options) : e.weightLowerBound(options));
-                        int vi = v.getIndex();
-                        if (weights[vi] > vw) {
-                            weights[vi] = vw;
-                            // selectively rekeying did not seem to offer any speed advantage
-                            q.insert(v, vw);
-                            // System.out.println("Insert " + v + " weight " + vw);
-                        }
+                    Vertex v = options.isArriveBy() ? 
+                        e.getToVertex() : e.getFromVertex();
+                    double ew = timeNotWeight ? 
+                           e.timeLowerBound(options) : e.weightLowerBound(options);
+                    if (ew < 0) {
+                        LOG.error("negative edge weight {} qt {}", ew, e);
+                        continue;
+                    }
+                    double vw = uw + ew;
+                    int vi = v.getIndex();
+                    if (weights[vi] > vw) {
+                        weights[vi] = vw;
+                        // selectively rekeying did not seem to offer any speed advantage
+                        q.insert(v, vw);
+                        // System.out.println("Insert " + v + " weight " + vw);
                     }
                 }
             }
@@ -161,7 +166,7 @@ public class BidirectionalRemainingWeightHeuristic implements
      */
     @Override
     public void timeInitialize(State s, Vertex target) {
-        recalculate(target, s.getOptions(), true);
+        recalculate(s.getVertex(), target, s.getOptions(), true);
     }
 
     @Override

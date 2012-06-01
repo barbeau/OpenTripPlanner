@@ -13,11 +13,17 @@
 
 package org.opentripplanner.routing.core;
 
+import java.util.Arrays;
 import java.util.Date;
 
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.opentripplanner.routing.algorithm.NegativeWeightException;
+import org.opentripplanner.routing.automata.AutomatonState;
 import org.opentripplanner.routing.edgetype.OnBoardForwardEdge;
+import org.opentripplanner.routing.edgetype.StreetEdge;
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.Vertex;
+import org.opentripplanner.routing.pathparser.PathParser;
 
 public class State implements Cloneable {
 
@@ -47,28 +53,36 @@ public class State implements Cloneable {
     /* StateData contains data which is unlikely to change as often */
     protected StateData stateData;
 
+    // how far have we walked
+    protected double walkDistance;
+
+    // track the states of all path parsers -- probably changes frequently
+    protected int[] pathParserStates;
+    
     /* CONSTRUCTORS */
 
     /**
-     * Create a state representing the beginning of a trip at the given vertex, at the current
-     * system time.
+     * Create an initial state representing the beginning of a search for the given routing context. 
+     * Initial "parent-less" states can only be created at the beginning of a trip. elsewhere, all 
+     * states must be created from a parent and associated with an edge.
      */
-    public State(Vertex v, TraverseOptions opt) {
-        this((int) (System.currentTimeMillis() / 1000), v, opt);
+    public State(RoutingRequest opt) {
+        this (opt.rctx.origin, opt.getSecondsSinceEpoch(), opt);
     }
 
     /**
-     * Create a state representing the beginning of a search at the given vertex, at the given time.
-     * 
-     * @param time - The time at which the search will start
-     * @param v - The origin vertex of the search
+     * Create an initial state, forcing vertex to the specified value. Useful for reusing a 
+     * RoutingContext in TransitIndex, tests, etc.
      */
-    public State(long time, Vertex vertex, TraverseOptions opt) {
-        // parent-less states can only be created at the beginning of a trip.
-        // elsewhere, all states must be created from a parent
-        // and associated with an edge.
+    public State(Vertex vertex, RoutingRequest opt) {
+        this(vertex, opt.getSecondsSinceEpoch(), opt);
+    }
 
-        this.time = time;
+    /**
+     * Create an initial state, forcing vertex and time to the specified values. Useful for reusing 
+     * a RoutingContext in TransitIndex, tests, etc.
+     */
+    public State(Vertex vertex, long time, RoutingRequest options) {
         this.weight = 0;
         this.vertex = vertex;
         this.backState = null;
@@ -76,14 +90,17 @@ public class State implements Cloneable {
         this.backEdgeNarrative = null;
         this.hops = 0;
         this.stateData = new StateData();
-        stateData.options = opt;
-        stateData.startTime = time;
-        stateData.tripSeqHash = 0;
-        // System.out.printf("new state %d %s %s \n", this.time, this.vertex, stateData.options);
-    }
-
-    public State createState(long time, Vertex vertex, TraverseOptions options) {
-        return new State(time, vertex, options);
+        // note that here we are breaking the circular reference between rctx and options
+        // this should be harmless since reversed clones are only used when routing has finished
+        this.stateData.opt = options;
+        this.stateData.startTime = time;
+        this.stateData.tripSeqHash = 0;
+        this.stateData.usingRentedBike = false;
+        this.time = time;
+        if (options.rctx != null) {
+        	this.pathParserStates = new int[options.rctx.pathParsers.length];
+        	Arrays.fill(this.pathParserStates, AutomatonState.START);
+        }
     }
 
     /**
@@ -123,17 +140,30 @@ public class State implements Cloneable {
      * @return - The extension value for the given key, or null if not present
      */
     public Object getExtension(Object key) {
+        if (stateData.extensions == null) {
+            return null;
+        }
         return stateData.extensions.get(key);
     }
 
     public String toString() {
-        return "<State " + new Date(getTimeInMillis()) + " [" + weight + "] " + vertex + ">";
+        return "<State " + new Date(getTimeInMillis()) + " [" + weight + "] " + (isBikeRenting() ? "BIKE_RENT " : "") + vertex + ">";
     }
-
+    
+    public String toStringVerbose() {
+        return "<State " + new Date(getTimeInMillis()) + 
+                " w=" + this.getWeight() + 
+                " t=" + this.getElapsedTime() + 
+                " d=" + this.getWalkDistance() + 
+                " b=" + this.getNumBoardings();
+    }
+    
+    /** Returns time in seconds since epoch */
     public long getTime() {
         return this.time;
     }
 
+    /** returns the length of the trip in seconds up to this state */
     public long getElapsedTime() {
         return Math.abs(this.time - stateData.startTime);
     }
@@ -166,6 +196,17 @@ public class State implements Cloneable {
         return stateData.everBoarded;
     }
 
+    public boolean isBikeRenting() {
+        return stateData.usingRentedBike;
+    }
+
+    /**
+     * @return True if the state at vertex can be the end of path.
+     */
+    public boolean isFinal() {
+        return !isBikeRenting();
+    }
+
     public Vertex getPreviousStop() {
         return stateData.previousStop;
     }
@@ -179,7 +220,7 @@ public class State implements Cloneable {
     }
 
     public double getWalkDistance() {
-        return stateData.walkDistance;
+        return walkDistance;
     }
 
     public Vertex getVertex() {
@@ -194,6 +235,9 @@ public class State implements Cloneable {
         if (other.weight == 0) {
             return false;
         }
+        // Multi-state (bike rental) - no domination for different states
+        if (isBikeRenting() != other.isBikeRenting())
+            return false;
 
         if (this.similarTripSeq(other)) {
             return this.weight <= other.weight;
@@ -264,8 +308,8 @@ public class State implements Cloneable {
 
     /**
      * Optional next result that allows {@link Edge} to return multiple results from
-     * {@link Edge#traverse(State, TraverseOptions)} or
-     * {@link Edge#traverseBack(State, TraverseOptions)}
+     * {@link Edge#traverse(State, RoutingRequest)} or
+     * {@link Edge#traverseBack(State, RoutingRequest)}
      * 
      * @return the next additional result from an edge traversal, or null if no more results
      */
@@ -305,14 +349,31 @@ public class State implements Cloneable {
         return ret;
     }
 
-    public TraverseOptions getOptions() {
-        return stateData.options;
+    public RoutingContext getContext() {
+        return stateData.opt.rctx;
+    }
+
+    public RoutingRequest getOptions () {
+        return stateData.opt;
+    }
+    
+    public TraverseMode getNonTransitMode(RoutingRequest options) {
+        TraverseModeSet modes = options.getModes();
+        if (modes.getCar())
+            return TraverseMode.CAR;
+        if (modes.getWalk() && !isBikeRenting())
+            return TraverseMode.WALK;
+        if (modes.getBicycle())
+            return TraverseMode.BICYCLE;
+        if (modes.getWalk())
+            return TraverseMode.WALK;
+        return null;
     }
 
     public State reversedClone() {
         // We no longer compensate for schedule slack (minTransferTime) here.
         // It is distributed symmetrically over all preboard and prealight edges.
-        return createState(this.time, this.vertex, stateData.options.reversedClone());
+        return new State(this.vertex, this.time, stateData.opt.reversedClone());
     }
 
     public void dumpPath() {
@@ -332,4 +393,75 @@ public class State implements Cloneable {
     public boolean similarTripSeq(State existing) {
         return this.stateData.tripSeqHash == existing.stateData.tripSeqHash;
     }
+
+    public double getWalkSinceLastTransit() {
+        return walkDistance - stateData.lastTransitWalk;
+    }
+
+    public double getWalkAtLastTransit() {
+        return stateData.lastTransitWalk;
+    }
+
+    public boolean multipleOptionsBefore() {
+        boolean foundAlternatePaths = false;
+        TraverseMode requestedMode = getNonTransitMode(getOptions());
+        for (Edge out : backState.vertex.getOutgoing()) {
+            if (out == backEdge) {
+                continue;
+            }
+            if (!(out instanceof StreetEdge)) {
+                continue;
+            }
+            State outState = out.traverse(backState);
+            if (outState == null) {
+                continue;
+            }
+            if (!outState.getBackEdgeNarrative().getMode().equals(requestedMode)) {
+                //walking a bike, so, not really an exit
+                continue;
+            }
+            // this section handles the case of an option which is only an option if you walk your
+            // bike. It is complicated because you will not need to walk your bike until one
+            // edge after the current edge.
+
+            //now, from here, try a continuing path.
+            Vertex tov = outState.getVertex();
+            boolean found = false;
+            for (Edge out2 : tov.getOutgoing()) {
+                State outState2 = out2.traverse(outState);
+                if (outState2 != null && !outState2.getBackEdgeNarrative().getMode().equals(requestedMode)) {
+                    // walking a bike, so, not really an exit
+                    continue;
+                }
+                found = true;
+                break;
+            }
+            if (!found) {
+                continue;
+            }
+
+            // there were paths we didn't take.
+            foundAlternatePaths = true;
+            break;
+        }
+        return foundAlternatePaths;
+    }
+    
+    public boolean allPathParsersAccept() {
+    	PathParser[] parsers = this.stateData.opt.rctx.pathParsers;
+    	for (int i = 0; i < parsers.length; i++)
+    		if ( ! parsers[i].accepts(pathParserStates[i]))
+    			return false;
+    	return true;
+	}
+    		
+	public String getPathParserStates() {
+		StringBuilder sb = new StringBuilder();
+		sb.append("( ");
+		for (int i : pathParserStates)
+			sb.append(String.format("%02d ", i));
+		sb.append(")");
+		return sb.toString();
+	}
+
 }

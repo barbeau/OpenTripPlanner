@@ -15,13 +15,14 @@ package org.opentripplanner.routing.edgetype;
 
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.Trip;
-import org.opentripplanner.routing.core.AbstractEdge;
+import org.opentripplanner.routing.core.RoutingContext;
 import org.opentripplanner.routing.core.ServiceDay;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.AbstractEdge;
+import org.opentripplanner.routing.graph.Vertex;
 
 import com.vividsolutions.jts.geom.Geometry;
 
@@ -44,17 +45,20 @@ public class Board extends AbstractEdge implements OnBoardForwardEdge {
 
     private Trip trip;
 
+    private int pickupType;
+
     public static final int SECS_IN_DAY = 86400;
 
     private static final long serialVersionUID = 2L;
 
     public Board(Vertex startStation, Vertex startJourney, Hop hop, boolean wheelchairAccessible,
-                 String zone, Trip trip) {
+            String zone, Trip trip, int pickupType) {
         super(startStation, startJourney);
         this.hop = hop;
         this.wheelchairAccessible = wheelchairAccessible;
         this.zone = zone;
         this.trip = trip;
+        this.pickupType = pickupType;
     }
 
     public String getDirection() {
@@ -82,7 +86,8 @@ public class Board extends AbstractEdge implements OnBoardForwardEdge {
     }
 
     public State traverse(State state0) {
-    	TraverseOptions options = state0.getOptions();
+        RoutingContext rctx = state0.getContext();
+        RoutingRequest options = state0.getOptions();
         if (options.wheelchairAccessible && !wheelchairAccessible) {
             return null;
         }
@@ -92,16 +97,18 @@ public class Board extends AbstractEdge implements OnBoardForwardEdge {
             s1.setTripId(null);
             s1.setLastAlightedTime(state0.getTime());
             s1.setPreviousStop(fromv);
+            TransitUtils.handleBoardAlightType(s1, pickupType);
             return s1.makeState();
         } else {
             if (options.bannedTrips.contains(getTrip().getId())) {
                 return null;
             }
+            TraverseMode mode = state0.getNonTransitMode(options);
             // forward traversal: find a relevant transit trip
             if (!options.getModes().contains(hop.getMode())) {
                 return null;
             }
-            if (options.getModes().getBicycle() && !hop.getBikesAllowed()) {
+            if (mode.equals(TraverseMode.BICYCLE) && !hop.getBikesAllowed()) {
                 return null;
             }
             if (options.wheelchairAccessible && !wheelchairAccessible) {
@@ -113,7 +120,7 @@ public class Board extends AbstractEdge implements OnBoardForwardEdge {
             /* check if this trip is running or not */
             AgencyAndId serviceId = hop.getServiceId();
             int wait = -1;
-            for (ServiceDay sd : options.serviceDays) {
+            for (ServiceDay sd : rctx.serviceDays) {
                 int secondsSinceMidnight = sd.secondsSinceMidnight(current_time);
                 // only check for service on days that are not in the future
                 // this avoids unnecessarily examining tomorrow's services
@@ -131,8 +138,9 @@ public class Board extends AbstractEdge implements OnBoardForwardEdge {
             }
 
             StateEditor s1 = state0.edit(this);
+            TransitUtils.handleBoardAlightType(s1, pickupType);
             s1.incrementTimeInSeconds(wait);
-            s1.incrementWeight(wait * options.waitReluctance + options.boardCost);
+            s1.incrementWeight(wait * options.waitReluctance + options.getBoardCost(mode));
             s1.incrementNumBoardings();
             s1.setTripId(trip.getId());
             s1.setZone(zone);
@@ -142,15 +150,15 @@ public class Board extends AbstractEdge implements OnBoardForwardEdge {
     }
 
     /**
-     * If the search is proceeding forward, board cost is added at board edges. 
-     * Otherwise it is added at alight edges.
+     * If the search is proceeding forward, board cost is added at board edges. Otherwise it is
+     * added at alight edges.
      */
     @Override
-    public double weightLowerBound(TraverseOptions options) {
-    	if (options.isArriveBy())
+    public double weightLowerBound(RoutingRequest options) {
+        if (options.isArriveBy())
             return 0;
-    	else
-            return options.boardCost;
+        else
+            return options.getBoardCostLowerBound();
     }
 
     /* use default (constant 0) timelowerbound */

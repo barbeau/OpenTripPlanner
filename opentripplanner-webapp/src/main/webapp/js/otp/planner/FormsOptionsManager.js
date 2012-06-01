@@ -37,7 +37,7 @@ otp.planner.FormsOptionsManagerStatic = {
 
     // the optimize store is used to control the optimize options
     optimizeStore: null,
-        
+
     initialize : function(config) {
         otp.configure(this, config);
 
@@ -87,8 +87,12 @@ otp.planner.FormsOptionsManagerStatic = {
         // and we want to reset the optimize option too
         // because it's possible that it's no longer valid
         this.optimize.reset();
-        if(this.maxWalk)    this.showComboBox(this.maxWalk);
-        if(this.wheelchair) this.showComboBox(this.wheelchair);
+        if(this.maxWalk)      this.showComboBox(this.maxWalk);
+        if(this.wheelchair)   this.showComboBox(this.wheelchair);
+        if (this.lastDistance && !this.isBike(mode)) {
+            otp.planner.StaticForms.setMaxDistance(this.lastDistance);
+            this.lastDistance = null;
+        }
 
         if(this.isTransitOrBus(mode)) {
             if (this.isBike(mode)) {
@@ -98,18 +102,29 @@ otp.planner.FormsOptionsManagerStatic = {
             }
             showTransitOptions = true;
         } else if(this.isWalk(mode)) {
-            if(this.maxWalk)    this.hideComboBox(this.maxWalk);
+            if(this.maxWalk)    this.hideComboBox(this.maxWalk, false);
         } else {
-            if(this.maxWalk)    this.hideComboBox(this.maxWalk);
-            if(this.wheelchair) this.hideComboBox(this.wheelchair);
+            if(this.maxWalk)    this.hideComboBox(this.maxWalk, false);
+            if(this.wheelchair) this.hideComboBox(this.wheelchair, true);
         }
         if (this.isBike(mode)) {
             showBikeOptions = true;
+
+            // save off old walk distance value -- used to reset the system (see above)
+            var min = otp.planner.Utils.bikeMinimum();
+            var oldVal = otp.planner.StaticForms.getMaxDistance();
+            if(oldVal && oldVal < min)
+            {
+                this.lastDistance = oldVal;
+
+                // increase (temporarily) bike distance to 3 miles
+                otp.planner.StaticForms.setMaxDistance(min);
+            }
         }
 
         // we don't display the combo box at all in this case
         if(!showTransitOptions && !showBikeOptions) {
-            this.hideComboBox(this.optimize);
+            this.hideComboBox(this.optimize, true);
         }
   
         this.optimizeStore.filterBy(this.getOptimizeFilter(showTransitOptions, showBikeOptions));
@@ -176,8 +191,8 @@ otp.planner.FormsOptionsManagerStatic = {
         cb.label.show();
     },
 
-    hideComboBox : function(cb) {
-        cb.reset();
+    hideComboBox : function(cb, reset) {
+        if(reset) cb.reset();
         cb.hide();
         cb.label.hide();
     },

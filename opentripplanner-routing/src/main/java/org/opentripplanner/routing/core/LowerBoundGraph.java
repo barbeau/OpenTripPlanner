@@ -17,8 +17,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import org.opentripplanner.routing.graph.Edge;
+import org.opentripplanner.routing.graph.AbstractVertex;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.location.StreetLocation;
-import org.opentripplanner.routing.pqueue.BinHeap;
+import org.opentripplanner.common.pqueue.BinHeap;
 import org.opentripplanner.routing.spt.BasicShortestPathTree;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,30 +43,29 @@ public class LowerBoundGraph {
 	int   [][] vertex;
 	double[][] weight;
 	int nVertices = 0;
-    Vertex[] vertexByIndex;
+	Vertex[] vertexByIndex;
 	private int heaviest; // the last vertex that was pulled from the queue at the last search
 
 	public LowerBoundGraph(Graph original, int kind) {
 		originalGraph = original;
-		nVertices = GenericVertex.maxIndex;
+		nVertices = AbstractVertex.getMaxIndex();
 		LOG.info("Table size is: {}", nVertices);
 		vertex = new int   [nVertices][];
 		weight = new double[nVertices][];
 		vertexByIndex = new Vertex[nVertices];
-		TraverseOptions opt = new TraverseOptions();
+		RoutingRequest opt = new RoutingRequest();
 		if (kind == INCOMING)
 			opt.setArriveBy(true);
 		LOG.info("Loading origial graph into compact representation...");
 		ArrayList<State> svs = new ArrayList<State>();
-		for (GraphVertex gv : original.getVertices()) {
-			GenericVertex u = (GenericVertex) (gv.vertex); 
+		for (Vertex u : original.getVertices()) {
 			State su = new State(u, opt);
 			svs.clear();
 			Iterable<Edge> edges;
 			if (kind == INCOMING)
-				edges = original.getIncoming(u);
+				edges = u.getIncoming();
 			else 
-				edges = original.getOutgoing(u);
+				edges = u.getOutgoing();
 			// avoid empty edgelist entries by traversing all edges first
 			for (Edge e : edges) {
 				State sv = e.optimisticTraverse(su);
@@ -71,13 +74,13 @@ public class LowerBoundGraph {
 					//System.out.println(sv.getWeight() + " " + e);
 				}
 			}
-			int ui = u.index;
+			int ui = u.getIndex();
 			int ne = svs.size(); 
 			vertex[ui] = new int[ne];
 			weight[ui] = new double[ne];
 			int ei = 0;
 			for (State sv : svs) {
-				vertex[ui][ei] = ((GenericVertex)(sv.getVertex())).index;
+				vertex[ui][ei] = sv.getVertex().getIndex();
 				weight[ui][ei] = sv.getWeight();
 				ei++;
 			}
@@ -148,7 +151,7 @@ public class LowerBoundGraph {
 		Arrays.fill(result, Double.POSITIVE_INFINITY);
 		BinHeap<Integer> q = new BinHeap<Integer>();
 		for (Vertex origin : origins) {
-			int originIndex = ((GenericVertex)origin).index;
+			int originIndex = origin.getIndex();
 			result[originIndex] = 0;
 			q.insert(originIndex, 0);
 		}
@@ -179,8 +182,8 @@ public class LowerBoundGraph {
 		double[] result = new double[nVertices];
 		Arrays.fill(result, Double.POSITIVE_INFINITY);
 		BinHeap<Integer> q = new BinHeap<Integer>();
-		for (DirectEdge de : origin.getExtra()) {
-			GenericVertex toVertex = (GenericVertex)(de.getToVertex());  
+		for (Edge de : origin.getExtra()) {
+			Vertex toVertex = de.getToVertex();  
 			int toIndex = toVertex.getIndex();
 			if (toVertex == origin) continue;
 			if (toIndex >= nVertices) continue;
@@ -264,9 +267,9 @@ public class LowerBoundGraph {
 	// testing search function that does an optimistic search in the original graph
 	private BasicShortestPathTree originalSSSP(Vertex o){
 		LOG.info("Initializing original SSSP");
-		BasicShortestPathTree spt = new BasicShortestPathTree();
 		BinHeap<State> q = new BinHeap<State>();
-		TraverseOptions opt = new TraverseOptions();
+		RoutingRequest opt = new RoutingRequest();
+		BasicShortestPathTree spt = new BasicShortestPathTree(opt);
 		opt.maxWalkDistance = Double.MAX_VALUE;
 		State initialState = new State(o, opt);
 		q.insert(initialState, 0);
@@ -276,7 +279,7 @@ public class LowerBoundGraph {
 		while ( ! q.empty()) {
 			State  su = q.extract_min();
 			if ( ! spt.visit(su)) continue;
-			for (Edge e : originalGraph.getOutgoing(su.getVertex())) {
+			for (Edge e : su.getVertex().getOutgoing()) {
 				State sv = e.optimisticTraverse(su);
 				if (sv != null && spt.add(sv))
 					q.insert(sv, sv.getWeight());

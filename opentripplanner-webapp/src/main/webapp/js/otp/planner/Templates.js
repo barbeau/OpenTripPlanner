@@ -26,7 +26,8 @@ otp.planner.ParamTemplate = 'submit'
         + '&maxWalkDistance={maxWalkDistance}'
         + '&time={time}'
         + '&date={date}'
-        + '&arr={arriveBy}&itinID={itinID}';
+        + '&arr={arriveBy}&itinID={itinID}'
+        + '&wheelchair={wheelchair}';
 
 otp.planner.Templates = {
 
@@ -46,6 +47,7 @@ otp.planner.Templates = {
 
     tripFeedbackDetails : null,
     tripPrintTemplate   : null,
+    streetviewTemplate  : null,
 
     initialize : function(config) {
         otp.configure(this, config);
@@ -55,7 +57,7 @@ otp.planner.Templates = {
 
         if(this.TP_ITINERARY == null)
             this.TP_ITINERARY = new Ext.XTemplate(
-                  '<p><a href="#">{id}</a>: ',
+                  '<div id={id} class="dir-alt-route-inner"><a href="javascript:void;">{id}</a>: ',
                   ' {startTimeDisplay} - {endTimeDisplay} ',
                   '<tpl if="numTransfers">',
                     '<br/><span class="transfers">',
@@ -65,7 +67,7 @@ otp.planner.Templates = {
                     ', {duration} ' + this.getDurationTemplateString(),
                     ')</span>',
                   '</tpl>',
-                  '</p>'
+                  '</div>'
             ).compile();
 
         if(this.tripFeedbackDetails == null)
@@ -87,17 +89,23 @@ otp.planner.Templates = {
                 '{url}?' + otp.planner.ParamTemplate
             ).compile();
 
+        if(this.streetviewTemplate == null)
+            this.streetviewTemplate =  new Ext.XTemplate(
+                '<a href="javascript:void;" onClick="otp.core.MapStatic.streetview({x}, {y});">{name}</a>'
+            ).compile();
+
         if(this.TP_TRIPDETAILS == null)
             this.TP_TRIPDETAILS = new Ext.XTemplate(
                 '<div id="trip-details">',
                 '<h3>' + this.locale.labels.trip_details + '</h3>',
                 '<table cellpadding="3" cellspacing="0" border="0">',
-                    '<tpl if="regularFare != null">',
-                      '<tr><td><strong>' + this.locale.labels.fare        + '</strong></td><td>{regularFare}</td></tr></tpl>',
-                      '<tr><td><strong>' + this.locale.labels.travel      + '</strong></td><td>{startTimeDisplay}</td></tr>',
-                      '<tr><td><strong>' + this.locale.labels.valid       + '</strong></td><td>{[new Date().format("' + this.locale.time.format + '")]}</td></tr>',
-                      '<tr><td><strong>' + this.locale.labels.trip_length + '</strong></td><td>{duration} ' + this.getDurationTemplateString() + '</td></tr>',
-                      '<tpl if="walkDistance"><tr><td><strong>{distanceVerb}</strong></td><td>{walkDistance}</td></tr></tpl>',
+                    '<tpl if="regularFare != null && showFareInfo == true">',
+                      '<tr><td><strong>' + this.locale.labels.fare      + '</strong></td><td>{regularFare}</td></tr>',
+                    '</tpl>',
+                    '<tr><td><strong>' + this.locale.labels.travel      + '</strong></td><td>{startTimeDisplay}</td></tr>',
+                    '<tr><td><strong>' + this.locale.labels.valid       + '</strong></td><td>{[new Date().format("' + this.locale.time.format + '")]}</td></tr>',
+                    '<tr><td><strong>' + this.locale.labels.trip_length + '</strong></td><td>{duration} ' + this.getDurationTemplateString() + '</td></tr>',
+                    '<tpl if="walkDistance"><tr><td><strong>{distanceVerb}</strong></td><td>{walkDistance}</td></tr></tpl>',
                 '</table></div>'
             ).compile();
 
@@ -107,7 +115,7 @@ otp.planner.Templates = {
         if(this.TP_LEG_MODE == null)
             this.TP_LEG_MODE = ''
                 + '<h4>' 
-                + '<a href="#">{[otp.util.Modes.translate(values["mode"])]}</a>'
+                + '<a href="javascript:void;">{[otp.util.Modes.translate(values["mode"])]}</a>'
                 + ' {routeName} '
                 + this.HEADSIGN
                 + '</h4>';
@@ -115,7 +123,7 @@ otp.planner.Templates = {
         if(this.TP_LEG_CONTINUES == null)
             this.TP_LEG_CONTINUES = ''
                 + '<h4>'
-                + '<a href="#">' + this.locale.instructions.continue_as + '</a> '
+                + '<a href="javascript:void;">' + this.locale.instructions.continue_as + '</a> '
                 + ' {routeName} '
                 + this.HEADSIGN
                 + '<span class="transfers">(' + this.locale.instructions.stay_aboard + ')</span>'
@@ -125,9 +133,9 @@ otp.planner.Templates = {
             this.TP_LEG_BASE_STR = ''
                 + '<p class="leg-info">'
                 + '<span class="time">{startTimeDisplayShort}</span> ' + this.locale.instructions.depart + ' {fromName}'
-                + '<tpl if="fromStopId != null && fromStopId.length &gt; 0 && showStopIds">'
+                + '<tpl if="fromStopCode != null && fromStopCode.length &gt; 0 && showStopCodes == true">'
                 +   '<br/>'
-                +   '<span class="stopid">' + this.locale.labels.stop_id + ' {fromStopId}</span>'
+                +   '<span class="stopid">' + this.locale.labels.stop_id + ' {fromStopCode}</span>'
                 + '</tpl>'
                 + '</p>'
                 + '<tpl if="duration != null">'
@@ -135,11 +143,21 @@ otp.planner.Templates = {
                 + '</tpl>'
                 + '<p class="leg-info">'
                 + '<span class="time">{endTimeDisplayShort}</span> ' + this.locale.instructions.arrive + ' {toName}'
-                + '<tpl if="toStopId != null && toStopId.length &gt; 0 && showStopIds">'
+                + '<tpl if="toStopCode != null && toStopCode.length &gt; 0 && showStopCodes == true">'
                 +   '<br/>'
-                +   '<span class="stopid">' + this.locale.labels.stop_id + ' {toStopId}</span>'
+                +   '<span class="stopid">' + this.locale.labels.stop_id + ' {toStopCode}</span>'
                 + '</tpl>'
                 + '</p>'
+                + '<tpl if="agencyName != undefined && agencyName != null && agencyName.length &gt; 0 && showAgencyInfo == true">'
+                +   '<p class="agency-leg-info">'
+                +     '<tpl if="agencyUrl != null && agencyUrl.length &gt; 1">'
+                +       '<span>' + this.locale.labels.agency_msg + ' <a href="{agencyUrl}" target="#" title="' + this.locale.labels.agency_msg_tt + '">{agencyName}</a>.</span>'
+                +     '</tpl>'
+                +     '<tpl if="agencyUrl == null || agencyUrl.length &lt; 1">'
+                +       '<span>' + this.locale.labels.agency_msg + ' {agencyName}.</span>'
+                +     '</tpl>'
+                +   '</p>'
+                + '</tpl>'
                 + '<tpl if="alerts != null && alerts.length &gt; 0">'
                 + '<tpl for="alerts">'
                 +   '<p class="alert"><img src="images/ui/trip/alert.png" align="absmiddle"/> '
@@ -158,24 +176,24 @@ otp.planner.Templates = {
 
         if(this.TP_START == null)
             this.TP_START = new Ext.XTemplate(
-                  '<h4><a href="#">' + this.locale.instructions.start_at + '</a> {name}</h4>'
+                  '<h4><a href="javascript:void;">' + this.locale.instructions.start_at + '</a> {name}</h4>'
             ).compile();
 
         if(this.TP_END == null)
             this.TP_END = new Ext.XTemplate(
-                  '<h4><a href="#">' + this.locale.instructions.end_at + '</a> {name}</h4>'
+                  '<h4><a href="javascript: void;">' + this.locale.instructions.end_at + '</a> {name}</h4>'
             ).compile(); 
     },
 
     makeLegTemplate : function(mode)
     {
         return new Ext.XTemplate(
-                  '<h4><a href="#">' + mode + ' </a>',
+                  '<h4><a href="javascript:void;">' + mode + ' </a>',
                     '{[otp.util.StringFormattingUtils.getDirection(values.direction)]} ',
                     this.locale.directions.to + ' {toName}',
                   '</h4>',
-                  '<tpl if="toStopId != null && toStopId.length &gt; 0 && showStopIds">',
-                    '<p class="leg-info"><span class="stopid">' + this.locale.labels.stop_id + ' {toStopId}</span></p>',
+                  '<tpl if="toStopCode != null && toStopCode.length &gt; 0 && showStopCodes == true">',
+                    '<p class="leg-info"><span class="stopid">' + this.locale.labels.stop_id + ' {toStopCode}</span></p>',
                   '</tpl>',
                   '<tpl if="duration != null && duration &gt; 0">',
                     '<p class="leg-info transfers">' + this.locale.labels.about + ' {duration} ' + this.getDurationTemplateString() + ' - {distance}</p>', 
@@ -190,7 +208,6 @@ otp.planner.Templates = {
     {
         return '<tpl if="duration == 1.0">' + this.locale.time.minute  + '</tpl>' +
                '<tpl if="duration != 1.0">' + this.locale.time.minutes + '</tpl>';
-    
     },
 
     m_transitLeg  : null,
@@ -228,6 +245,17 @@ otp.planner.Templates = {
         }
         return retVal;
     },
+
+    getShowDetails : function()
+    {
+        return '<span class="show-details">' + this.locale.buttons.showDetails + '</span>';
+    },
+
+    getHideDetails : function()
+    {
+        return '<span class="hide-details">' + this.locale.buttons.hideDetails + '</span>';
+    },
+
 
     CLASS_NAME: "otp.planner.Templates"
 };

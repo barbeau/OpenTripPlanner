@@ -18,45 +18,42 @@ import java.io.File;
 
 import junit.framework.TestCase;
 
+import org.onebusaway.gtfs.model.calendar.CalendarServiceData;
 import org.opentripplanner.ConstantsForTests;
 import org.opentripplanner.gtfs.GtfsContext;
 import org.opentripplanner.gtfs.GtfsLibrary;
-import org.opentripplanner.routing.algorithm.AStar;
-import org.opentripplanner.routing.core.DirectEdge;
-import org.opentripplanner.routing.core.Edge;
-import org.opentripplanner.routing.core.Graph;
-import org.opentripplanner.routing.core.GraphVertex;
-import org.opentripplanner.routing.core.TraverseOptions;
-import org.opentripplanner.routing.core.Vertex;
+import org.opentripplanner.routing.algorithm.GenericAStar;
+import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.graph.Edge;
 import org.opentripplanner.routing.edgetype.PatternAlight;
 import org.opentripplanner.routing.edgetype.PatternBoard;
 import org.opentripplanner.routing.edgetype.PatternHop;
 import org.opentripplanner.routing.edgetype.factory.GTFSPatternHopFactory;
+import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.spt.GraphPath;
 import org.opentripplanner.routing.spt.ShortestPathTree;
-import org.opentripplanner.routing.core.TransitStop;
+import org.opentripplanner.routing.vertextype.TransitStop;
 import org.opentripplanner.util.TestUtils;
 
 public class TestHopFactory extends TestCase {
 
     private Graph graph;
 
-    private GtfsContext context;
+    private GenericAStar aStar = new GenericAStar();
 
     public void setUp() throws Exception {
-
-        context = GtfsLibrary.readGtfs(new File(ConstantsForTests.FAKE_GTFS));
+        GtfsContext context = GtfsLibrary.readGtfs(new File(ConstantsForTests.FAKE_GTFS));
         graph = new Graph();
-
         GTFSPatternHopFactory factory = new GTFSPatternHopFactory(context);
         factory.run(graph);
-
+        graph.putService(CalendarServiceData.class, GtfsLibrary.createCalendarServiceData(context.getDao()));
     }
 
     public void testBoardAlight() throws Exception {
 
-        GraphVertex stop_a = graph.getGraphVertex("agency_A_depart");
-        GraphVertex stop_b_depart = graph.getGraphVertex("agency_B_depart");
+        Vertex stop_a = graph.getVertex("agency_A_depart");
+        Vertex stop_b_depart = graph.getVertex("agency_B_depart");
 
         assertEquals(1, stop_a.getDegreeOut());
         assertEquals(3, stop_b_depart.getDegreeOut());
@@ -66,11 +63,11 @@ public class TestHopFactory extends TestCase {
         }
 
         PatternBoard pb = (PatternBoard) stop_a.getOutgoing().iterator().next();
-        GraphVertex journey_a_1 = graph.getGraphVertex(pb.getToVertex());
+        Vertex journey_a_1 = pb.getToVertex();
 
         assertEquals(1, journey_a_1.getDegreeIn());
 
-        for (DirectEdge e : filter(journey_a_1.getOutgoing(),DirectEdge.class)) {
+        for (Edge e : journey_a_1.getOutgoing()) {
             if (e.getToVertex() instanceof TransitStop) {
                 assertEquals(PatternAlight.class, e.getClass());
             } else {
@@ -83,18 +80,16 @@ public class TestHopFactory extends TestCase {
         Vertex stop_a = graph.getVertex("agency_A_depart");
         Vertex stop_c = graph.getVertex("agency_C_arrive");
 
-        TraverseOptions options = new TraverseOptions(context);
-
-        ShortestPathTree spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_c
-                .getLabel(),
-                TestUtils.dateInSeconds(2009, 8, 7, 8, 0, 0), options);
+        RoutingRequest options = new RoutingRequest();
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 8, 0, 0);
+        options.setRoutingContext(graph, stop_a, stop_c);
+        ShortestPathTree spt = aStar.getShortestPathTree(options);
 
         GraphPath path = spt.getPath(stop_c, false);
         assertNotNull(path);
         assertEquals(6, path.states.size());
-        long endTime = TestUtils.dateInSeconds(2009, 8, 7, 8, 30, 0);
+        long endTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 8, 30, 0);
         assertEquals(endTime, path.getEndTime());
-
     }
 
     public void testRouting() throws Exception {
@@ -105,46 +100,46 @@ public class TestHopFactory extends TestCase {
         Vertex stop_d = graph.getVertex("agency_D_arrive");
         Vertex stop_e = graph.getVertex("agency_E_arrive");
 
-        TraverseOptions options = new TraverseOptions();
-        options.setGtfsContext(context);
+        RoutingRequest options = new RoutingRequest();
+        options.dateTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 0, 0, 0); 
 
         ShortestPathTree spt;
         GraphPath path;
 
         // A to B
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_b.getLabel(), 
-                TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_a, stop_b);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_b, false);
         assertNotNull(path);
         assertEquals(4, path.states.size());
 
         // A to C
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_c.getLabel(), 
-                TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_a, stop_c);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_c, false);
         assertNotNull(path);
         assertEquals(6, path.states.size());
 
         // A to D
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_d.getLabel(), 
-                TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_a, stop_d);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_d, false);
         assertNotNull(path);
         assertTrue(path.states.size() <= 11);
-        long endTime = TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0) + 40 * 60;
+        long endTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 0, 0, 0) + 40 * 60;
         assertEquals(endTime, path.getEndTime());
 
         // A to E
-        spt = AStar.getShortestPathTree(graph, stop_a.getLabel(), stop_e.getLabel(),
-                TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0), options);
+        options.setRoutingContext(graph, stop_a, stop_e);
+        spt = aStar.getShortestPathTree(options);
 
         path = spt.getPath(stop_e, false);
         assertNotNull(path);
         assertTrue(path.states.size() <= 12);
-        endTime = TestUtils.dateInSeconds(2009, 8, 7, 0, 0, 0) + 70 * 60;
+        endTime = TestUtils.dateInSeconds("America/New_York", 2009, 8, 7, 0, 0, 0) + 70 * 60;
         assertEquals(endTime, path.getEndTime());
     }
 }

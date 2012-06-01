@@ -15,6 +15,9 @@ package org.opentripplanner.routing.core;
 
 import java.util.Arrays;
 
+import org.opentripplanner.routing.graph.AbstractVertex;
+import org.opentripplanner.routing.graph.Vertex;
+
 @SuppressWarnings("unchecked")
 public class VertexMap<T> {
 	
@@ -25,20 +28,19 @@ public class VertexMap<T> {
 	}
 
 	public VertexMap() {
-		this(GenericVertex.maxIndex);
+		this(AbstractVertex.getMaxIndex());
 	}
 	
-	// If GraphVertex is eliminated, then every vertex will be a GenericVertex
-	public void set(GenericVertex v, T elem) {
-		int index = v.index;
+	public void set(Vertex v, T elem) {
+		int index = v.getIndex();
 		while (index > map.length)
 			map = Arrays.copyOf(map, (int) (map.length * 1.5));
 		// T old = map[v.index];
-		map[v.index] = elem;
+		map[v.getIndex()] = elem;
 	}
 	          
-	public T get(GenericVertex v) {
-		return map[v.index];
+	public T get(Vertex v) {
+		return map[v.getIndex()];
 	}
 	
 }
