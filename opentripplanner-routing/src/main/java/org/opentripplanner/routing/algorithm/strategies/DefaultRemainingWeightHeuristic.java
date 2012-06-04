@@ -28,11 +28,7 @@ public class DefaultRemainingWeightHeuristic implements RemainingWeightHeuristic
 
     private static final long serialVersionUID = -5172878150967231550L;
 
-<<<<<<< HEAD
-    private TraverseOptions options;
-=======
     private RoutingRequest options;
->>>>>>> OpenPlans-remote/master
 
     private boolean useTransit = false;
 
@@ -68,11 +64,7 @@ public class DefaultRemainingWeightHeuristic implements RemainingWeightHeuristic
                 if (euclidianDistance + s.getWalkDistance() > options.getMaxWalkDistance()) {
                     return -1;
                 }
-<<<<<<< HEAD
-                return options.walkReluctance * euclidianDistance / options.speed;
-=======
                 return options.walkReluctance * euclidianDistance / speed;
->>>>>>> OpenPlans-remote/master
             } else {
                 int boardCost;
                 if (s.isOnboard()) {
@@ -87,11 +79,7 @@ public class DefaultRemainingWeightHeuristic implements RemainingWeightHeuristic
                     if (euclidianDistance + s.getWalkDistance() > options.getMaxWalkDistance()) {
                         return -1;
                     }
-<<<<<<< HEAD
-                    return options.walkReluctance * euclidianDistance / options.speed;
-=======
                     return options.walkReluctance * euclidianDistance / speed;
->>>>>>> OpenPlans-remote/master
                 } else {
                     double mandatoryWalkDistance = target.getDistanceToNearestTransitStop()
                             + sv.getDistanceToNearestTransitStop();
@@ -127,11 +115,7 @@ public class DefaultRemainingWeightHeuristic implements RemainingWeightHeuristic
                 if (euclidianDistance + s.getWalkDistance() > options.getMaxWalkDistance()) {
                     return -1;
                 }
-<<<<<<< HEAD
-                return options.walkReluctance * euclidianDistance / options.speed;
-=======
                 return options.walkReluctance * euclidianDistance / speed;
->>>>>>> OpenPlans-remote/master
             } else {
                 int boardCost;
                 if (s.isOnboard()) {

@@ -427,12 +427,4 @@ public class PlainStreetEdge extends StreetEdge {
         tv.setStairs(isStairs());
         return tv;
     }
-
-    public boolean isStairs() {
-        return stairs;
-    }
-
-    public void setStairs(boolean stairs) {
-        this.stairs = stairs;
-    }
 }

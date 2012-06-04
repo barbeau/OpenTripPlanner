@@ -24,11 +24,11 @@ otp.config_defaults = {
 
         // options to turn stuff on / off on the planner
         options        : {
-            showElevationGraph    : true,   // turn on/off the southern panel that displays the elevation data
+            showElevationGraph    : false,   // turn on/off the southern panel that displays the elevation data
             showBikeshareMode     : true,   // turn on/off the bikeshare options in the mode pull down
             showTrainMode         : true,   // turn on/off the train options in the mode pull down
             showWheelchairForm    : true,   // turn on/off the wheelchair check box (on by default)
-            showIntermediateForms : true,   // turn on/off the ability to plan routes with intermediate points 
+            showIntermediateForms : false,   // turn on/off the ability to plan routes with intermediate points 
             showStopCodes         : true,   // show stop codes as part of the itinerary
             showAgencyInfo        : true,   // show the 'service run by Yolobus' on each itinerary leg
             showFareInfo          : true,   // show the fare information in the itinerary
@@ -66,11 +66,11 @@ otp.config_defaults = {
 
         geocoder  :
         {
-            enabled : false,
-            url     : "/geocoder/geocode",  
+            enabled : true,
+            url     : "/opentripplanner-geocoder/geocode",  
             addressParamName : "address"
         },
-        fromToOverride : new Ext.Template('<div class="mapHelp">' + otp.config.locale.config.rightClickMsg + '</div>')
+        fromToOverride : null//new Ext.Template('<div class="mapHelp">' + otp.config.locale.config.rightClickMsg + '</div>')
 
         /* debug geocoder */
         /*  *
@@ -113,6 +113,10 @@ otp.config_defaults = {
         // If only one layer is defined in the baseLayer array, the layer switcher is disabled.
         // If there are several layers in the baseLayer array, the layer switcher is enabled and the first layer in the array becomes the default layer
         baseLayer: [
+           //Regular Open Street Map server
+           new OpenLayers.Layer.OSM(
+               "Open Street Map"
+           ),
            // MapBox Streets Layer
            new OpenLayers.Layer.OSM(
                "Mapbox Streets", [
@@ -127,10 +131,6 @@ otp.config_defaults = {
                    "by<a href='http://openstreetmap.org/' target='_blank'> OpenStreetMap.</a> " +
                    "Tiles from<a href='http://mapbox.com/about/maps' target='_blank'> MapBox Streets.</a>"
                }
-           ),
-           // Regular Open Street Map server
-           new OpenLayers.Layer.OSM(
-               "Open Street Map"
            ),
            // Cycle map tiles
            new OpenLayers.Layer.OSM(

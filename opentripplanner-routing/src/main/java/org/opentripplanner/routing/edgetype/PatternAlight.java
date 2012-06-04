@@ -221,36 +221,6 @@ public class PatternAlight extends PatternEdge implements OnBoardReverseEdge {
         // s1.incrementWeight(state0.getOptions().boardCost);
         return s1.makeState();
     }
-    
-    /* See comment at weightLowerBound. */
-    public double timeLowerBound(TraverseOptions options) {
-        if (options.isArriveBy())
-            return 0;
-    	else
-            if (!options.getModes().get(modeMask)) {
-                return Double.POSITIVE_INFINITY;
-            }
-            AgencyAndId serviceId = getPattern().getExemplar().getServiceId();
-            for (ServiceDay sd : options.serviceDays)
-                if (sd.serviceIdRunning(serviceId))
-                    return 0;
-            return Double.POSITIVE_INFINITY;
-    }
-    
-    /* 
-     * If the main search is proceeding backward, board cost is added at alight edges.
-     * The lower bound search is proceeding forward and if it has reached an alight edge 
-     * the pattern was already deemed useful at board time.
-     * If the main search is proceeding forward, the lower bound search is proceeding backward, 
-     * Check the mode or serviceIds of this pattern at board time to see whether this pattern 
-     * is worth exploring.
-     */
-    public double weightLowerBound(TraverseOptions options) {
-        if (options.isArriveBy())
-            return options.boardCost;
-        else
-            return timeLowerBound(options);
-    }
 
     /* See comment at weightLowerBound. */
     public double timeLowerBound(RoutingContext rctx) {
