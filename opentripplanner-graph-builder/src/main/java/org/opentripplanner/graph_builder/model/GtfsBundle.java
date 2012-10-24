@@ -40,13 +40,15 @@ public class GtfsBundle {
 
     private CsvInputSource csvInputSource;
 
-    private Boolean defaultBikesAllowed = false;
+    private Boolean defaultBikesAllowed = true;
 
     private boolean transfersTxtDefinesStationPaths = false;
 
     private Map<String, String> agencyIdMappings = new HashMap<String, String>();
 
     private int defaultStreetToStopTime;
+
+    private double maxStopToShapeSnapDistance = 150;
 
     public void setPath(File path) {
         this.path = path;
@@ -178,5 +180,13 @@ public class GtfsBundle {
             }
         }
 
+    }
+
+    public double getMaxStopToShapeSnapDistance() {
+        return maxStopToShapeSnapDistance;
+    }
+
+    public void setMaxStopToShapeSnapDistance(double maxStopToShapeSnapDistance) {
+        this.maxStopToShapeSnapDistance = maxStopToShapeSnapDistance;
     }
 }

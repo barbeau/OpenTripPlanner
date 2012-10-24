@@ -147,7 +147,7 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
             ride.zones.add(ride.endZone);
             ride.endTime  = state.getTime();
             // in default fare service, classify rides by mode 
-            ride.classifier = edge.getMode();
+            ride.classifier = state.getBackMode();
         }
         return rides;
     }

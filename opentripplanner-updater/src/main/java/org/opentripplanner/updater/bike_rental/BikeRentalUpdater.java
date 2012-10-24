@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
+import javax.annotation.PostConstruct;
+
 import org.opentripplanner.routing.bike_rental.BikeRentalStation;
 import org.opentripplanner.routing.bike_rental.BikeRentalStationService;
 import org.opentripplanner.routing.edgetype.RentABikeOffEdge;
@@ -51,8 +53,16 @@ public class BikeRentalUpdater implements Runnable {
 
     private String routerId;
 
+    private GraphService graphService;
+
+    private String network = "default";
+
     public void setRouterId(String routerId) {
         this.routerId = routerId;
+    }
+    
+    public void setNetwork(String network) {
+        this.network = network;
     }
 
     @Autowired
@@ -62,6 +72,11 @@ public class BikeRentalUpdater implements Runnable {
 
     @Autowired
     public void setGraphService(GraphService graphService) {
+        this.graphService = graphService;
+    }
+
+    @PostConstruct
+    public void setup() {
         if (routerId != null) {
             graph = graphService.getGraph(routerId);
         } else {
@@ -78,7 +93,7 @@ public class BikeRentalUpdater implements Runnable {
     public List<BikeRentalStation> getStations() {
         return source.getStations();
     }
-    
+
     @Override
     public void run() {
         _log.debug("Updating bike rental stations from " + source);
@@ -102,8 +117,8 @@ public class BikeRentalUpdater implements Runnable {
                     graph.addTemporaryEdge(e);
                 }
                 verticesByStation.put(station, vertex);
-                new RentABikeOnEdge(vertex, vertex);
-                new RentABikeOffEdge(vertex, vertex);
+                new RentABikeOnEdge(vertex, vertex, network);
+                new RentABikeOffEdge(vertex, vertex, network);
             } else {
                 vertex.setBikesAvailable(station.bikesAvailable);
                 vertex.setSpacesAvailable(station.spacesAvailable);

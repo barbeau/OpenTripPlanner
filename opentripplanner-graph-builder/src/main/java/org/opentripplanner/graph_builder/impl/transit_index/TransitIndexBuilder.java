@@ -33,21 +33,17 @@ import org.onebusaway.gtfs.model.Trip;
 import org.onebusaway.gtfs.services.GtfsRelationalDao;
 import org.opentripplanner.common.IterableLibrary;
 import org.opentripplanner.common.geometry.DistanceLibrary;
+import org.opentripplanner.common.geometry.SphericalDistanceLibrary;
 import org.opentripplanner.graph_builder.services.GraphBuilderWithGtfsDao;
 import org.opentripplanner.gtfs.GtfsLibrary;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.edgetype.Alight;
-import org.opentripplanner.routing.edgetype.Board;
-import org.opentripplanner.routing.edgetype.Dwell;
-import org.opentripplanner.routing.edgetype.Hop;
-import org.opentripplanner.routing.edgetype.PatternAlight;
-import org.opentripplanner.routing.edgetype.PatternBoard;
+import org.opentripplanner.routing.edgetype.PatternInterlineDwell;
+import org.opentripplanner.routing.edgetype.TransitBoardAlight;
 import org.opentripplanner.routing.edgetype.PatternDwell;
 import org.opentripplanner.routing.edgetype.PatternHop;
 import org.opentripplanner.routing.edgetype.PreAlightEdge;
 import org.opentripplanner.routing.edgetype.PreBoardEdge;
 import org.opentripplanner.routing.edgetype.TableTripPattern;
-import org.opentripplanner.routing.graph.AbstractEdge;
 import org.opentripplanner.routing.graph.Edge;
 import org.opentripplanner.routing.graph.Graph;
 import org.opentripplanner.routing.services.TransitIndexService;
@@ -85,9 +81,13 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
 
     private HashMap<AgencyAndId, HashSet<String>> directionsByRoute = new HashMap<AgencyAndId, HashSet<String>>();
 
+    private HashMap<AgencyAndId, HashSet<Stop>> stopsByRoute = new HashMap<AgencyAndId, HashSet<Stop>>();
+
     List<TraverseMode> modes = new ArrayList<TraverseMode>();
 
     private HashSet<Edge> handledEdges = new HashSet<Edge>();
+
+    private DistanceLibrary distanceLibrary = SphericalDistanceLibrary.getInstance();
 
     @Override
     public void setDao(GtfsRelationalDao dao) {
@@ -114,15 +114,15 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
                 + variantsByRoute.size() + " routes, " + totalTrips + " trips, " + totalVariants
                 + " variants ");
 
-        TransitIndexServiceImpl service = (TransitIndexServiceImpl) graph.getService(TransitIndexService.class);
+        TransitIndexServiceImpl service = (TransitIndexServiceImpl) graph
+                .getService(TransitIndexService.class);
         if (service == null) {
-            service = new TransitIndexServiceImpl(variantsByAgency,
-                    variantsByRoute, variantsByTrip, preBoardEdges, preAlightEdges, directionsByRoute,
+            service = new TransitIndexServiceImpl(variantsByAgency, variantsByRoute,
+                    variantsByTrip, preBoardEdges, preAlightEdges, directionsByRoute, stopsByRoute,
                     modes);
         } else {
-            service.merge(variantsByAgency,
-                    variantsByRoute, variantsByTrip, preBoardEdges, preAlightEdges, directionsByRoute,
-                    modes);
+            service.merge(variantsByAgency, variantsByRoute, variantsByTrip, preBoardEdges,
+                    preAlightEdges, directionsByRoute, stopsByRoute, modes);
         }
 
         insertCalendarData(service);
@@ -132,7 +132,53 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
         Coordinate coord = findTransitCenter();
         service.setCenter(coord);
 
+        service.setOvernightBreak(findOvernightBreak());
+
         graph.putService(TransitIndexService.class, service);
+    }
+
+    /**
+     * Find the longest consecutive sequence of minutes with no transit stops; this is assumed to be the overnight service break.
+     * 
+     * @return
+     */
+    private int findOvernightBreak() {
+        final int minutesInDay = 24 * 60;
+        boolean[] minutes = new boolean[minutesInDay];
+        for (StopTime stopTime : dao.getAllStopTimes()) {
+            int time;
+            if (stopTime.isDepartureTimeSet()) {
+                time = stopTime.getDepartureTime();
+            } else if (stopTime.isArrivalTimeSet()) {
+                time = stopTime.getArrivalTime();
+            } else {
+                continue;
+            }
+            minutes[(time / 60) % minutesInDay] = true;
+        }
+        int bestLength = 0;
+        int best = -1;
+        int run = 0;
+        for (int i = 0; i < minutesInDay; ++i) {
+            if (minutes[i]) {
+                // end of run
+                if (run > bestLength) {
+                    bestLength = run;
+                    best = i - run;
+                }
+                run = 0;
+            } else {
+                run += 1;
+            }
+        }
+        if (run > bestLength) {
+            bestLength = run;
+            best = 1440 - run;
+        }
+        if (best < 0) {
+            return -1;
+        }
+        return best * 60 + 1;
     }
 
     /**
@@ -209,7 +255,7 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
                 coord = new Coordinate(stop.getLon(), stop.getLat());
                 double total = 0;
                 for (int k = 0; k < i; ++k) {
-                    double distance = DistanceLibrary.distance(coord, centers[k].coord);
+                    double distance = distanceLibrary.distance(coord, centers[k].coord);
                     total += distance * distance;
                 }
                 if (total > bestDistance) {
@@ -237,7 +283,7 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
                 double best_distance = Double.MAX_VALUE;
                 for (int c = 0; c < centers.length; ++c) {
                     Coordinate center = centers[c].coord;
-                    double distance = DistanceLibrary.distance(coord, center);
+                    double distance = distanceLibrary.distance(coord, center);
                     if (distance < best_distance) {
                         best_center = c;
                         best_distance = distance;
@@ -262,7 +308,7 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
         }
         _log.debug("found transit center");
 
-        //the highest-weighted cluster
+        // the highest-weighted cluster
         return Collections.max(Arrays.asList(centers)).coord;
     }
 
@@ -273,6 +319,8 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
     }
 
     private void createRouteVariants(Graph graph) {
+        TransitBoardAlight tba;
+        
         for (TransitVertex gv : IterableLibrary.filter(graph.getVertices(), TransitVertex.class)) {
             boolean start = false;
             boolean noStart = false;
@@ -283,20 +331,20 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
                     continue;
                 }
                 handledEdges.add(e);
-                if (!(e instanceof AbstractEdge)) {
+                if (!(e instanceof Edge)) {
                     continue;
                 }
-                if (e instanceof PatternHop || e instanceof Alight || e instanceof PatternDwell || e instanceof Dwell) {
+                if (e instanceof PatternHop || e instanceof PatternDwell) {
                     noStart = true;
                 }
-                if (e instanceof PatternBoard) {
-                    pattern = ((PatternBoard) e).getPattern();
-                    trip = pattern.getExemplar();
-                    start = true;
-                }
-                if (e instanceof Board) {
-                    trip = ((Board) e).getTrip();
-                    start = true;
+                if (e instanceof TransitBoardAlight) {
+                    tba = (TransitBoardAlight) e;
+
+                    if (tba.isBoarding()) {
+                        pattern = tba.getPattern();
+                        trip = pattern.getExemplar();
+                        start = true;
+                    }
                 }
                 if (e instanceof PreBoardEdge) {
                     TransitStop stop = (TransitStop) e.getFromVertex();
@@ -330,30 +378,42 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
                     RouteSegment segment = new RouteSegment(gv.getStopId());
                     segment.hopIn = prevHop;
                     for (Edge e : gv.getIncoming()) {
-                        if (e instanceof Board || e instanceof PatternBoard) {
+                        if (e instanceof TransitBoardAlight && 
+                                        ((TransitBoardAlight) e).isBoarding()) {
                             segment.board = e;
                         }
                     }
                     Collection<Edge> outgoing = gv.getOutgoing();
                     gv = null;
                     for (Edge e : outgoing) {
-                        if (e instanceof PatternHop || e instanceof Hop) {
+                        if (e instanceof PatternHop) {
                             segment.hopOut = e;
                             gv = (TransitVertex) e.getToVertex();
                         }
-                        if (e instanceof PatternDwell || e instanceof Dwell) {
+                        if (e instanceof PatternDwell) {
                             segment.dwell = e;
+                            for (Edge e2 : e.getToVertex().getIncoming()) {
+                                if (e2 instanceof TransitBoardAlight && 
+                                         ((TransitBoardAlight) e2).isBoarding()) {
+                                    segment.board = e2;
+                                }
+                            }
                             for (Edge e2 : e.getToVertex().getOutgoing()) {
-                                if (e2 instanceof PatternHop || e2 instanceof Hop) {
+                                if (e2 instanceof PatternHop) {
                                     segment.hopOut = e2;
                                     gv = (TransitVertex) e2.getToVertex();
                                 }
-                                if (e2 instanceof PatternAlight || e2 instanceof Alight) {
+                                if (e2 instanceof TransitBoardAlight &&
+                                        !((TransitBoardAlight) e2).isBoarding()) {
                                     segment.alight = e2;
                                 }
                             }
                         }
-                        if (e instanceof PatternAlight || e instanceof Alight) {
+                        if (e instanceof PatternInterlineDwell) {
+                            variant.addInterline((PatternInterlineDwell) e);
+                        }
+                        if (e instanceof TransitBoardAlight &&
+                                !((TransitBoardAlight) e).isBoarding()) {
                             segment.alight = e;
                         }
                     }
@@ -434,10 +494,9 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
             }
 
             /**
-             * now we have the case where no route has a unique start, stop, or via. This can happen
-             * if you have a single route which serves trips on an H-shaped alignment, where trips
-             * can start at A or B and end at either C or D, visiting the same sets of stops along
-             * the shared segments.
+             * now we have the case where no route has a unique start, stop, or via. This can happen if you have a single route which serves trips on
+             * an H-shaped alignment, where trips can start at A or B and end at either C or D, visiting the same sets of stops along the shared
+             * segments.
              * 
              * <pre>
              *                    A      B
@@ -448,24 +507,21 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
              *                    C      D
              * </pre>
              * 
-             * First, we try unique start + end, then start + via + end, and if that doesn't work,
-             * we check for expresses, and finally we use a random trip's id.
+             * First, we try unique start + end, then start + via + end, and if that doesn't work, we check for expresses, and finally we use a random
+             * trip's id.
              * 
-             * It can happen if there is an express and a local version of a given line where the
-             * local starts and ends at the same place as the express but makes a strict superset of
-             * stops; the local version will get a "via", but the express will be doomed.
+             * It can happen if there is an express and a local version of a given line where the local starts and ends at the same place as the
+             * express but makes a strict superset of stops; the local version will get a "via", but the express will be doomed.
              * 
-             * We can first check for the local/express situation by saying that if there are a
-             * subset of routes with the same start/end, and there is exactly one that can't be
-             * named with start/end/via, call it "express".
+             * We can first check for the local/express situation by saying that if there are a subset of routes with the same start/end, and there is
+             * exactly one that can't be named with start/end/via, call it "express".
              * 
-             * Consider the following three trips (A, B, C) along a route with four stops. A is the
-             * local, and gets "via stop 3"; B is a limited, and C is (logically) an express:
+             * Consider the following three trips (A, B, C) along a route with four stops. A is the local, and gets "via stop 3"; B is a limited, and
+             * C is (logically) an express:
              * 
              * A,B,C -- A,B -- A -- A, B, C
              * 
-             * Here, neither B nor C is nameable. If either were removed, the other would be called
-             * "express".
+             * Here, neither B nor C is nameable. If either were removed, the other would be called "express".
              * 
              * 
              * 
@@ -482,8 +538,7 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
                 // take the intersection
                 remainingVariants.retainAll(ends.get(lastStop));
                 if (remainingVariants.size() == 1) {
-                    String name = routeName + " from " + firstStop + " to "
-                            + lastStop;
+                    String name = routeName + " from " + firstStop + " to " + lastStop;
                     variant.setName(name);
                     continue;
                 }
@@ -507,8 +562,8 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
                         }
                     }
                     if (found && !bad) {
-                        String name = routeName + " from " + firstStop + " to "
-                                + lastStop + " via " + getName(stop);
+                        String name = routeName + " from " + firstStop + " to " + lastStop
+                                + " via " + getName(stop);
                         variant.setName(name);
                         break;
                     }
@@ -520,8 +575,8 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
                         // we know that this one must be a subset of the other, because it
                         // has no unique via. So, it is the express
 
-                        String name = routeName + " from " + firstStop + " to "
-                                + lastStop + " express";
+                        String name = routeName + " from " + firstStop + " to " + lastStop
+                                + " express";
                         variant.setName(name);
                     } else {
                         // the final fallback
@@ -559,7 +614,19 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
         List<StopTime> stopTimes = dao.getStopTimesForTrip(trip);
         ArrayList<Stop> stops = new ArrayList<Stop>();
         for (StopTime stopTime : stopTimes) {
+            //nonduplicate stoptimes
+            if (stops.size() == 0 || !stopTime.getStop().equals(stops.get(stops.size() - 1)))
             stops.add(stopTime.getStop());
+        }
+
+        // build the list of stops for this route
+        HashSet<Stop> stopsForRoute = stopsByRoute.get(routeId);
+        if (stopsForRoute == null) {
+            stopsForRoute = new HashSet<Stop>();
+            stopsByRoute.put(routeId, stopsForRoute);
+        }
+        for (StopTime stopTime : stopTimes) {
+            stopsByRoute.get(routeId).add(stopTime.getStop());
         }
 
         Route route = trip.getRoute();
@@ -589,5 +656,15 @@ public class TransitIndexBuilder implements GraphBuilderWithGtfsDao {
         variantsByTrip.put(trip.getId(), variant);
         variant.addTrip(trip);
         return variant;
+    }
+
+    @Override
+    public List<String> provides() {
+        return Arrays.asList("transitIndex");
+    }
+
+    @Override
+    public List<String> getPrerequisites() {
+        return Collections.emptyList();
     }
 }

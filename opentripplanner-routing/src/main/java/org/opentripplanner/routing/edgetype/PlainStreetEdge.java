@@ -15,32 +15,43 @@ package org.opentripplanner.routing.edgetype;
 
 import java.io.IOException;
 import java.io.ObjectOutputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
+import org.opentripplanner.common.TurnRestriction;
+import org.opentripplanner.common.TurnRestrictionType;
+import org.opentripplanner.common.geometry.DirectionUtils;
 import org.opentripplanner.common.geometry.PackedCoordinateSequence;
-import org.opentripplanner.routing.core.NoThruTrafficState;
+import org.opentripplanner.routing.core.RoutingRequest;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.StateEditor;
 import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.core.RoutingRequest;
-import org.opentripplanner.routing.graph.Graph;
+import org.opentripplanner.routing.graph.Edge;
 import org.opentripplanner.routing.patch.Alert;
 import org.opentripplanner.routing.util.ElevationProfileSegment;
+import org.opentripplanner.routing.vertextype.IntersectionVertex;
 import org.opentripplanner.routing.vertextype.StreetVertex;
-import org.opentripplanner.routing.vertextype.TurnVertex;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.LineString;
 
 /**
- * This represents a street segment. This is unusual in an edge-based graph, but happens when we
- * have to split a set of turns to accommodate a transit stop.
+ * This represents a street segment.
  * 
  * @author novalis
  * 
  */
-public class PlainStreetEdge extends StreetEdge {
+public class PlainStreetEdge extends StreetEdge implements Cloneable {
+
+    private static Logger LOG = LoggerFactory.getLogger(PlainStreetEdge.class); 
 
     private static final long serialVersionUID = 1L;
+
+    private static final double GREENWAY_SAFETY_FACTOR = 0.1;
 
     private ElevationProfileSegment elevationProfileSegment;
 
@@ -56,7 +67,7 @@ public class PlainStreetEdge extends StreetEdge {
 
     private String id;
 
-    private boolean crossable = true;
+    private int streetClass = CLASS_OTHERPATH;
 
     public boolean back;
     
@@ -72,8 +83,20 @@ public class PlainStreetEdge extends StreetEdge {
      * This street is a staircase
      */
     private boolean stairs;
+    
+    /** The speed in meters per second that an automobile can traverse this street segment at */
+    private float carSpeed;
+    
+    /** This street has a toll */
+    private boolean toll;
 
     private Set<Alert> wheelchairNotes;
+
+    private List<TurnRestriction> turnRestrictions = Collections.emptyList();
+
+    public int inAngle;
+
+    public int outAngle;
 
     /**
      * No-arg constructor used only for customization -- do not call this unless you know
@@ -83,11 +106,18 @@ public class PlainStreetEdge extends StreetEdge {
         super(null, null);
     }
 
+    public PlainStreetEdge(StreetVertex v1, StreetVertex v2, LineString geometry, 
+            String name, double length,
+            StreetTraversalPermission permission, boolean back) {
+        // use a default car speed of ~25 mph for splitter vertices and the like
+        this(v1, v2, geometry, name, length, permission, back, 11.2f);
+    }
+    
     // Presently, we have plainstreetedges that connect both IntersectionVertexes and
     // TurnVertexes
     public PlainStreetEdge(StreetVertex v1, StreetVertex v2, LineString geometry, 
             String name, double length,
-            StreetTraversalPermission permission, boolean back) {
+            StreetTraversalPermission permission, boolean back, float carSpeed) {
         super(v1, v2);
         this.geometry = geometry;
         this.length = length;
@@ -95,6 +125,27 @@ public class PlainStreetEdge extends StreetEdge {
         this.name = name;
         this.permission = permission;
         this.back = back;
+        this.carSpeed = carSpeed;
+        if (geometry != null) {
+            try {
+                for (Coordinate c : geometry.getCoordinates()) {
+                    if (Double.isNaN(c.x)) {
+                        System.out.println("X DOOM");
+                    }
+                    if (Double.isNaN(c.y)) {
+                        System.out.println("Y DOOM");
+                    }
+                }
+                double angleR = DirectionUtils.getLastAngle(geometry);
+                outAngle = ((int) (180 * angleR / Math.PI) + 180 + 360) % 360;
+                angleR = DirectionUtils.getFirstAngle(geometry);
+                inAngle = ((int) (180 * angleR / Math.PI) + 180 + 360) % 360;
+            } catch (IllegalArgumentException iae) {
+                LOG.error("exception while determining street edge angles. setting to zero. there is probably something wrong with this street segment's geometry.");
+                inAngle = 0;
+                outAngle = 0;
+            }
+        }
     }
 
     @Override
@@ -151,6 +202,11 @@ public class PlainStreetEdge extends StreetEdge {
     }
 
     @Override
+    public boolean isElevationFlattened() {
+        return elevationProfileSegment.isFlattened();
+    }
+
+    @Override
     public double getDistance() {
         return length;
     }
@@ -161,35 +217,44 @@ public class PlainStreetEdge extends StreetEdge {
     }
 
     @Override
-    public TraverseMode getMode() {
-        return TraverseMode.WALK;
-    }
-
-    @Override
     public String getName() {
         return name;
     }
 
     @Override
     public State traverse(State s0) {
-        return doTraverse(s0, s0.getOptions());
+        final RoutingRequest options = s0.getOptions();
+        return doTraverse(s0, options, s0.getNonTransitMode());
     }
 
-    private State doTraverse(State s0, RoutingRequest options) {
-        TraverseMode traverseMode = s0.getNonTransitMode(options);
+    private State doTraverse(State s0, RoutingRequest options, TraverseMode traverseMode) {
+        Edge backEdge = s0.getBackEdge();
+        if (backEdge != null && 
+                (options.arriveBy ? (backEdge.getToVertex() == fromv) : (backEdge.getFromVertex() == tov))) {
+            //no illegal U-turns
+            return null;
+        }
         if (!canTraverse(options, traverseMode)) {
             if (traverseMode == TraverseMode.BICYCLE) {
                 // try walking bike since you can't ride here
-                return doTraverse(s0, options.getWalkingOptions());
+                return doTraverse(s0, options.getWalkingOptions(), TraverseMode.WALK);
             }
             return null;
         }
-        double speed = options.getSpeed(s0.getNonTransitMode(options));
+        
+        double speed;
+        
+        // Automobiles have variable speeds depending on the edge type
+        if (traverseMode == TraverseMode.CAR)
+            speed = this.calculateCarSpeed(options);
+        else
+            speed = options.getSpeed(traverseMode);
+         
         double time = length / speed;
         double weight;
         if (options.wheelchairAccessible) {
             weight = elevationProfileSegment.getSlopeSpeedEffectiveLength() / speed;
-        } else if (s0.getNonTransitMode(options).equals(TraverseMode.BICYCLE)) {
+        } else if (traverseMode.equals(TraverseMode.BICYCLE)) {
             time = elevationProfileSegment.getSlopeSpeedEffectiveLength() / speed;
             switch (options.optimize) {
             case SAFE:
@@ -197,7 +262,7 @@ public class PlainStreetEdge extends StreetEdge {
                 break;
             case GREENWAYS:
                 weight = elevationProfileSegment.getBicycleSafetyEffectiveLength() / speed;
-                if (elevationProfileSegment.getBicycleSafetyEffectiveLength() / length <= TurnVertex.GREENWAY_SAFETY_FACTOR) {
+                if (elevationProfileSegment.getBicycleSafetyEffectiveLength() / length <= GREENWAY_SAFETY_FACTOR) {
                     // greenways are treated as even safer than they really are
                     weight *= 0.66;
                 }
@@ -222,6 +287,10 @@ public class PlainStreetEdge extends StreetEdge {
                 weight = length / speed;
             }
         } else {
+            if (options.isWalkingBike()) {
+                //take slopes into account when walking bikes
+                time = elevationProfileSegment.getSlopeSpeedEffectiveLength() / speed;
+            }
             weight = time;
         }
         if (isStairs()) {
@@ -229,47 +298,92 @@ public class PlainStreetEdge extends StreetEdge {
         } else {
             weight *= options.walkReluctance;
         }
-        FixedModeEdge en = new FixedModeEdge(this, s0.getNonTransitMode(options));
-        if (wheelchairNotes != null && options.wheelchairAccessible) {
-            en.addNotes(wheelchairNotes);
-        }
-        StateEditor s1 = s0.edit(this, en);
+        
+        StateEditor s1 = s0.edit(this);
+        s1.setBackMode(traverseMode);
 
-        switch (s0.getNoThruTrafficState()) {
-        case INIT:
-            if (isNoThruTraffic()) {
-                s1.setNoThruTrafficState(NoThruTrafficState.IN_INITIAL_ISLAND);
-            } else {
-                s1.setNoThruTrafficState(NoThruTrafficState.BETWEEN_ISLANDS);
+        if (wheelchairNotes != null && options.wheelchairAccessible) {
+            s1.addAlerts(wheelchairNotes);
+        }
+
+        PlainStreetEdge backPSE;
+        if (backEdge != null && backEdge instanceof PlainStreetEdge) {
+            backPSE = (PlainStreetEdge) backEdge;
+            float backSpeed = (float) (traverseMode == TraverseMode.CAR ? backPSE.getCarSpeed() :
+                options.getSpeed(traverseMode));
+            
+            final double realTurnCost;
+            
+            /*
+             * This is a subtle piece of code. Turn costs are evaluated differently during
+             * forward and reverse traversal. During forward traversal of an edge, the turn
+             * *into* that edge is used, while during reverse traversal, the turn *out of*
+             * the edge is used.
+             *
+             * However, over a set of edges, the turn costs must add up the same (for
+             * general correctness and specifically for reverse optimization). This means
+             * that during reverse traversal, we must also use the speed for the mode of
+             * the backEdge, rather than of the current edge.
+             */
+            if (fromv instanceof IntersectionVertex) {
+                if (options.arriveBy) {
+                    if (!canTurnOnto(backPSE, s0, traverseMode))
+                        return null;
+    
+                    realTurnCost = ((IntersectionVertex) tov).computeTraversalCost(
+                            this, backPSE, traverseMode, options, (float) speed, backSpeed);
+                } else {
+                    if (!backPSE.canTurnOnto(this, s0, traverseMode))
+                        return null;
+                    realTurnCost = ((IntersectionVertex) fromv).computeTraversalCost(
+                            backPSE, this, traverseMode, options, backSpeed, (float) speed);
+                }
             }
-            break;
-        case IN_INITIAL_ISLAND:
-            if (!isNoThruTraffic()) {
-                s1.setNoThruTrafficState(NoThruTrafficState.BETWEEN_ISLANDS);
+            else {
+                LOG.warn("PlainStreetEdge originating from non-IntersectionVertex: {}, " +
+                		"setting turn cost to 0", fromv);
+                realTurnCost = 0;
             }
-            break;
-        case BETWEEN_ISLANDS:
-            if (isNoThruTraffic()) {
-                s1.setNoThruTrafficState(NoThruTrafficState.IN_FINAL_ISLAND);
+                       
+            if (traverseMode != TraverseMode.CAR) 
+                s1.incrementWalkDistance(realTurnCost / 100); //just a tie-breaker
+
+            weight += realTurnCost;
+            long turnTime = (long) realTurnCost;
+            if (turnTime != realTurnCost) {
+                turnTime++;
             }
-            break;
-        case IN_FINAL_ISLAND:
-            if (!isNoThruTraffic()) {
-                // we have now passed entirely through a no thru traffic region,
-                // which is
-                // forbidden
-                return null;
-            }
-            break;
+            time += turnTime;
         }
 
         s1.incrementWalkDistance(length);
-        s1.incrementTimeInSeconds((int) Math.ceil(time));
+        int timeLong = (int) time;
+        if (timeLong != time) {
+            timeLong++;
+        }
+        s1.incrementTimeInSeconds(timeLong);
+        
+        if (traverseMode != TraverseMode.CAR)
+            s1.incrementWalkDistance(length);
+
         s1.incrementWeight(weight);
         if (s1.weHaveWalkedTooFar(options))
             return null;
+        
+        s1.addAlerts(notes);
+        
+        if (this.toll && traverseMode == TraverseMode.CAR)
+            s1.addAlert(Alert.createSimpleAlerts("Toll road"));
 
         return s1.makeState();
+    }
+
+    /**
+     * Calculate the average automobile traversal speed of this segment, given the RoutingRequest,
+     * and return it in meters per second.
+     */
+    private double calculateCarSpeed(RoutingRequest options) {
+        return this.carSpeed;
     }
 
     @Override
@@ -335,14 +449,6 @@ public class PlainStreetEdge extends StreetEdge {
         out.defaultWriteObject();
     }
 
-    public boolean isCrossable() {
-        return crossable;
-    }
-
-    public boolean getSlopeOverride() {
-        return elevationProfileSegment.getSlopeOverride();
-    }
-
     public void setId(String id) {
         this.id = id;
     }
@@ -374,7 +480,7 @@ public class PlainStreetEdge extends StreetEdge {
     
     @Override
     public String toString() {
-        return "PlainStreetEdge(" + fromv + " -> " + tov + ")";
+        return "PlainStreetEdge(" + name + ", " + fromv + " -> " + tov + ")";
     }
 
     public boolean hasBogusName() {
@@ -413,18 +519,95 @@ public class PlainStreetEdge extends StreetEdge {
         return wheelchairNotes;
     }
 
-    public TurnVertex createTurnVertex(Graph graph) {
-        String id = getId();
-        TurnVertex tv = new TurnVertex(graph, id, getGeometry(), getName(),
-                elevationProfileSegment, back, getNotes());
-        tv.setWheelchairNotes(getWheelchairNotes());
-        tv.setWheelchairAccessible(isWheelchairAccessible());
-        tv.setCrossable(isCrossable());
-        tv.setPermission(getPermission());
-        tv.setRoundabout(isRoundabout());
-        tv.setBogusName(hasBogusName());
-        tv.setNoThruTraffic(isNoThruTraffic());
-        tv.setStairs(isStairs());
-        return tv;
+    public int getStreetClass() {
+        return streetClass;
     }
+
+    public void setStreetClass(int streetClass) {
+        this.streetClass = streetClass;
+    }
+
+    public void addTurnRestriction(TurnRestriction turnRestriction) {
+        if (turnRestrictions.isEmpty()) {
+            turnRestrictions = new ArrayList<TurnRestriction>();
+        }
+        turnRestrictions.add(turnRestriction);
+    }
+
+    @Override
+    public PlainStreetEdge clone() {
+        try {
+            return (PlainStreetEdge) super.clone();
+        } catch (CloneNotSupportedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public List<TurnRestriction> getTurnRestrictions() {
+        return turnRestrictions;
+    }
+
+    public boolean canTurnOnto(Edge e, State state, TraverseMode mode) {
+        for (TurnRestriction restriction : turnRestrictions) {
+            /* FIXME: This is wrong for trips that end in the middle of restriction.to
+             */
+
+            if (restriction.type == TurnRestrictionType.ONLY_TURN) {
+                if (restriction.to != e && restriction.modes.contains(mode) &&
+                        restriction.active(state.getTime())) {
+                    return false;
+                }
+            } else {
+                if (restriction.to == e && restriction.modes.contains(mode) &&
+                        restriction.active(state.getTime())) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    public int getInAngle() {
+        return inAngle;
+    }
+
+    public int getOutAngle() {
+        return outAngle;
+    }
+
+    @Override
+    public ElevationProfileSegment getElevationProfileSegment() {
+        return elevationProfileSegment;
+    }
+
+    public void setCarSpeed(float carSpeed) {
+        this.carSpeed = carSpeed;         
+    }
+    
+    public float getCarSpeed() {
+        return carSpeed;
+    }
+    
+    public void setToll(boolean toll) {
+        this.toll = toll;
+    }
+    
+    public boolean getToll() {
+        return this.toll;
+    }
+
+    protected boolean detachFrom() {
+        for (Edge e : fromv.getIncoming()) {
+            if (!(e instanceof PlainStreetEdge)) continue;
+            PlainStreetEdge pse = (PlainStreetEdge) e;
+            ArrayList<TurnRestriction> restrictions = new ArrayList<TurnRestriction>(pse.turnRestrictions);
+            for (TurnRestriction restriction : restrictions) {
+                if (restriction.to == this) {
+                    pse.turnRestrictions.remove(restriction);
+                }
+            }
+        }
+        return super.detachFrom();
+    }
+
 }

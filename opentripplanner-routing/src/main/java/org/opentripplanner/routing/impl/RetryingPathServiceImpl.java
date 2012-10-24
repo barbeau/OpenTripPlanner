@@ -14,31 +14,21 @@
 package org.opentripplanner.routing.impl;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 
 import org.onebusaway.gtfs.model.AgencyAndId;
-import org.opentripplanner.common.model.NamedPlace;
-import org.opentripplanner.routing.core.RoutingContext;
-import org.opentripplanner.routing.core.State;
-import org.opentripplanner.routing.core.StateEditor;
-import org.opentripplanner.routing.core.TraverseMode;
 import org.opentripplanner.routing.core.RoutingRequest;
-import org.opentripplanner.routing.error.TransitTimesException;
-import org.opentripplanner.routing.error.VertexNotFoundException;
-import org.opentripplanner.routing.graph.Vertex;
+import org.opentripplanner.routing.pathparser.BasicPathParser;
+import org.opentripplanner.routing.pathparser.NoThruTrafficPathParser;
+import org.opentripplanner.routing.pathparser.PathParser;
 import org.opentripplanner.routing.services.GraphService;
 import org.opentripplanner.routing.services.PathService;
-import org.opentripplanner.routing.services.RemainingWeightHeuristicFactory;
-import org.opentripplanner.routing.services.RoutingService;
 import org.opentripplanner.routing.services.SPTService;
 import org.opentripplanner.routing.spt.GraphPath;
 import org.opentripplanner.routing.spt.ShortestPathTree;
-import org.opentripplanner.util.DateUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,8 +40,12 @@ public class RetryingPathServiceImpl implements PathService {
     private static final int MAX_TIME_FACTOR = 2;
     private static final int MAX_WEIGHT_FACTOR = 2;
 
-    @Autowired public GraphService graphService;
-    @Autowired public SPTService sptService;
+    private static final double MAX_WALK_MULTIPLE = 16;
+
+    @Autowired
+    private GraphService graphService;
+    @Autowired
+    private SPTService sptService;
 
     private double firstPathTimeout = 0; // seconds
     private double multiPathTimeout = 0; // seconds
@@ -89,7 +83,11 @@ public class RetryingPathServiceImpl implements PathService {
 
         // make sure the options has a routing context *before* cloning it (otherwise you get
         // orphan RoutingContexts leaving temporary edges in the graph until GC)
-        options.setRoutingContext(graphService.getGraph(options.getRouterId()));
+        if (options.rctx == null) {
+            options.setRoutingContext(graphService.getGraph(options.getRouterId()));
+            options.rctx.pathParsers = new PathParser[] { new BasicPathParser(),
+                    new NoThruTrafficPathParser() };
+        }
 
         long searchBeginTime = System.currentTimeMillis();
         
@@ -98,17 +96,9 @@ public class RetryingPathServiceImpl implements PathService {
         Queue<RoutingRequest> optionQueue = new LinkedList<RoutingRequest>();
         optionQueue.add(options);
 
-        /* if the user wants to travel by transit, create a bus-only set of options */
-        if (options.getModes().getTrainish() && options.getModes().contains(TraverseMode.BUS)) {
-            RoutingRequest busOnly = options.clone();
-            busOnly.setModes(options.getModes().clone());
-            busOnly.getModes().setTrainish(false);
-            // Moved inside block to avoid double insertion in list ? (AMB)
-            // optionQueue.add(busOnly);
-        }
-
         double maxWeight = Double.MAX_VALUE;
         double maxWalk = options.getMaxWalkDistance();
+        double initialMaxWalk = maxWalk;
         long maxTime = options.isArriveBy() ? 0 : Long.MAX_VALUE;
         RoutingRequest currOptions;
         while (paths.size() < options.numItineraries) {
@@ -141,7 +131,7 @@ public class RetryingPathServiceImpl implements PathService {
                         paths.size(), (System.currentTimeMillis() - searchBeginTime) / 1000.0);
                 break;
             }
-            if (maxWeight == Double.MAX_VALUE) {
+            if (maxWeight == Double.MAX_VALUE && maxWalk == Double.MAX_VALUE) {
                 /* the worst trip we are willing to accept is at most twice as bad or twice as long */
                 if (somePaths.isEmpty()) {
                     // if there is no first path, there won't be any other paths
@@ -162,6 +152,11 @@ public class RetryingPathServiceImpl implements PathService {
                 }
             }
             if (somePaths.isEmpty()) {
+                //try again doubling maxwalk
+                if (maxWalk > initialMaxWalk * MAX_WALK_MULTIPLE || maxWalk >= Double.MAX_VALUE)
+                    break;
+                maxWalk *= 2;
+                optionQueue.add(currOptions);
                 LOG.debug("No paths were found.");
                 continue;
             }
@@ -191,6 +186,22 @@ public class RetryingPathServiceImpl implements PathService {
         // We order the list of returned paths by the time of arrival or departure (not path duration)
         Collections.sort(paths, new PathComparator(options.isArriveBy()));
         return paths;
+    }
+
+    public GraphService getGraphService() {
+        return graphService;
+    }
+
+    public void setGraphService(GraphService graphService) {
+        this.graphService = graphService;
+    }
+
+    public SPTService getSptService() {
+        return sptService;
+    }
+
+    public void setSptService(SPTService sptService) {
+        this.sptService = sptService;
     }
 
 }

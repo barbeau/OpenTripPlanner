@@ -2,11 +2,17 @@ package org.opentripplanner.api.model.transit;
 
 import java.util.Collection;
 
-import javax.xml.bind.annotation.XmlElementWrapper;
+import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlRootElement;
+import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 
-@XmlRootElement
+import org.onebusaway.gtfs.model.Agency;
+import org.opentripplanner.routing.transit_index.adapters.AgencyAdapter;
+
+@XmlRootElement(name = "AgencyList")
 public class AgencyList {
-    @XmlElementWrapper
-    public Collection<String> agencyIds;
+
+    @XmlJavaTypeAdapter(value = AgencyAdapter.class)
+    @XmlElement(name = "Agency")
+    public Collection<Agency> agencies;
 }

@@ -15,10 +15,6 @@ package org.opentripplanner.common.geometry;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.LineSegment;
@@ -50,6 +46,7 @@ public class HashGrid {
     private final List<Object>[][] bins;
     private int nBins = 0;
     private int nEntries = 0;
+    private DistanceLibrary distanceLibrary = SphericalDistanceLibrary.getInstance();
     
     @SuppressWarnings("unchecked")
     public HashGrid(double binSizeMeters, int xBins, int yBins) {
@@ -102,7 +99,7 @@ public class HashGrid {
             Coordinate c1 = coords[i+1];
             RasterizedSegment rs = new RasterizedSegment(c0, c1, dist, t);
             rasterize(c0, c1, rs);
-            dist += DistanceLibrary.fastDistance(coords[i], coords[i+1]);
+            dist += distanceLibrary.fastDistance(coords[i], coords[i+1]);
         }
     }
     
@@ -225,7 +222,7 @@ public class HashGrid {
                         //if (t == p)
                         //    continue;
                         // FIXME
-                        double distance = DistanceLibrary.fastDistance(c, c);
+                        double distance = distanceLibrary .fastDistance(c, c);
                         // bins may contain distant colliding objects
                         if (distance > radiusMeters)
                             continue;

@@ -23,9 +23,11 @@ import org.opentripplanner.routing.core.RoutingRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.sun.jersey.api.core.InjectParam;
+import com.sun.jersey.api.spring.Autowire;
 
 // removed component, mixing spring and jersey annotations is bad?
 @Path("/tile/{z}/{x}/{y}.png") 
+@Autowire
 public class TileService extends RoutingResource {
     
     private static final Logger LOG = LoggerFactory.getLogger(TileService.class);
@@ -51,7 +53,7 @@ public class TileService extends RoutingResource {
 
         Layer layer = layers.get(0);
         Style style = styles.get(0);
-        RenderRequest renderRequest = new RenderRequest(format, layer, style, true);
+        RenderRequest renderRequest = new RenderRequest(format, layer, style, true, false);
 
         return renderer.getResponse(tileRequest, sptRequestA, sptRequestB, renderRequest);
     }

@@ -108,9 +108,9 @@ otp.planner.TripTab = {
             var id    = this.m_tripNodePrefix + (i + 1);
             var itin  = store.getAt(i);
             itin.set('id', (i+1)); // for template -- eg: the numerical hyperlink listing itinerary option
-            if (itin.data && !otp.util.Modes.isTransit(itin.data.mode)) {
+            if(!itin.data || !itin.data.transitTime || itin.data.transitTime <= 0)
                 itin.data.numTransfers = null;  // don't display transfer information on non-transit trips
-            }
+
             var text = this.templates.TP_ITINERARY.applyTemplate(itin.data);
             var treeNodeConfig = Ext.apply({}, {id: id, text: text}, treeNodeDefaults);
             z[i] = otp.util.ExtUtils.makeTreeNode(treeNodeConfig, this.itineraryClick, this);
@@ -298,35 +298,8 @@ otp.planner.TripTab = {
     /** */
     draw : function() {
         this.renderer.clear();
-        
-        /* draw topographic map */
-        
-        var hasBikeWalkLeg = false;
-        for(var i=0; i<this.m_activeItinerary.m_legStore.getTotalCount(); i++) {
-            if(this.m_activeItinerary.m_legStore.getAt(i).get("mode")=="BICYCLE" ||
-               this.m_activeItinerary.m_legStore.getAt(i).get("mode")=="WALK") {
-                hasBikeWalkLeg = true;
-                break;
-            }
-        }
-
-        if(hasBikeWalkLeg && this.planner.options.showElevationGraph)
-        {
-            try
-            {
-                this.ui.innerSouth.getEl().setHeight(180);
-                this.ui.innerSouth.show();
-                this.ui.viewport.doLayout();
-                this.topoRenderer.draw(this.m_activeItinerary, this.m_tripDetailsTree);
-            }
-            catch(e)
-            {
-                this.ui.innerSouth.hide();
-                this.ui.viewport.doLayout();
-
-                console.log("EXCEPTION in topoRenderer.draw(): " + e);
-            }
-        }
+                
+        this.drawTopography();
 
         this.renderer.draw(this.m_activeItinerary, this.m_tripDetailsTree);
         this.planner.controller.activate(this.CLASS_NAME);
@@ -344,6 +317,38 @@ otp.planner.TripTab = {
 
     },
 
+    drawTopography : function() {
+    
+        var hasBikeWalkLeg = false;
+        
+        for(var i=0; i<this.m_activeItinerary.m_legStore.getTotalCount(); i++) {
+            if(this.m_activeItinerary.m_legStore.getAt(i).get("mode")=="BICYCLE" ||
+               this.m_activeItinerary.m_legStore.getAt(i).get("mode")=="WALK") {
+                hasBikeWalkLeg = true;
+                break;
+            }
+        }
+
+        if(hasBikeWalkLeg && this.planner.options.showElevationGraph)
+        {
+
+            // if topo graph is already visible, remove it
+            if(this.ui.innerSouth.items.contains(this.topoRenderer.extWrapper)) {
+                this.ui.innerSouth.remove(this.topoRenderer.extWrapper);
+            }
+
+            this.ui.innerSouth.show();
+            this.ui.viewport.doLayout();
+
+            this.topoRenderer.draw(this.m_activeItinerary, this.m_tripDetailsTree);                
+            this.ui.innerSouth.add(this.topoRenderer.extWrapper);
+            this.ui.viewport.doLayout();
+
+            this.topoRenderer.postLayout();
+        }
+    },
+    
+    
     /**
      * callback function that will populate the itineraries tree  
      */

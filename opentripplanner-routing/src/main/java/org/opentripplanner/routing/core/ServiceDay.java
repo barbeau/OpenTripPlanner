@@ -14,14 +14,16 @@
 package org.opentripplanner.routing.core;
 
 import java.io.Serializable;
+import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Date;
 import java.util.GregorianCalendar;
-import java.util.Set;
 import java.util.TimeZone;
 
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.calendar.ServiceDate;
 import org.onebusaway.gtfs.services.calendar.CalendarService;
+import org.opentripplanner.routing.graph.Graph;
 
 /**
  * Represents a day of transit services. 
@@ -34,13 +36,13 @@ public class ServiceDay implements Serializable {
     private static final long serialVersionUID = -1206371243806996680L;
 
     protected long midnight;
-    protected Set<AgencyAndId> serviceIdsRunning;
+    protected BitSet serviceIdsRunning;
     
     /* 
      * make a ServiceDay including the given time's day's starting second and a set of 
      * serviceIds running on that day.
      */
-    public ServiceDay(long time, CalendarService cs, String agencyId) {
+    public ServiceDay(Graph graph, long time, CalendarService cs, String agencyId) {
         TimeZone timeZone = cs.getTimeZoneForAgencyId(agencyId);
         GregorianCalendar calendar = new GregorianCalendar(timeZone);
         calendar.setTime(new Date(time * 1000));
@@ -48,14 +50,22 @@ public class ServiceDay implements Serializable {
         ServiceDate sd = new ServiceDate(calendar);
         Date d = sd.getAsDate(timeZone);
         this.midnight = d.getTime() / 1000;
-        this.serviceIdsRunning = cs.getServiceIdsOnDate(sd);
+        serviceIdsRunning = new BitSet(cs.getServiceIds().size());
+        
+        ServiceIdToNumberService service = graph.getService(ServiceIdToNumberService.class);
+        for (AgencyAndId serviceId : cs.getServiceIdsOnDate(sd)) {
+            int n = service.getNumber(serviceId);
+            if (n < 0)
+                continue;
+            serviceIdsRunning.set(n);
+        }
     }
 
     /* 
      * Does the given serviceId run on this ServiceDay?
      */
-    public boolean serviceIdRunning(AgencyAndId serviceId) {
-        return this.serviceIdsRunning.contains(serviceId);
+    public boolean serviceIdRunning(int serviceId) {
+        return this.serviceIdsRunning.get(serviceId);
     }
 
     /* 
@@ -83,6 +93,40 @@ public class ServiceDay implements Serializable {
     }
     
     public String toString() {
-        return Long.toString(this.midnight) + serviceIdsRunning;
+        return Long.toString(this.midnight) + Arrays.asList(serviceIdsRunning);
     }
+    
+    public boolean equals(Object o) {
+        if (!(o instanceof ServiceDay)) return false;
+        ServiceDay other = (ServiceDay) o;
+        return other.midnight == midnight;
+    }
+    
+    @Override
+    public int hashCode() {
+        return (int) midnight;
+    }
+
+//    public static ServiceDay universalService(Graph graph) {
+//        //FIXME: assumes all service is in the same tz
+//        final String agencyId = graph.getAgencyIds().iterator().next();
+//        ServiceDay universal = new ServiceDay(graph, 0, graph.getCalendarService(), agencyId);
+//
+//        return universal;
+//    }
+    
+    /** Used in RAPTOR graph analysis to board everything. */
+    public static class UniversalService extends ServiceDay {
+        
+        private static final long serialVersionUID = 1L;
+
+        public UniversalService(Graph graph) {
+            super(graph, 0, graph.getCalendarService(), graph.getAgencyIds().iterator().next());
+        }
+
+        @Override
+        public boolean serviceIdRunning(int serviceId) { return true; }
+        
+    }
+    
 }

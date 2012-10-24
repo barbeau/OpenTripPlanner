@@ -61,7 +61,11 @@ otp.core.MapStatic = {
     permaLinkEnabled  : false,
     historyEnabled    : true,
     rightClickZoom    : true,
-    layerSwitchEnabled: false,
+    plannerOptions    : null,
+
+    // map base layers - @see showMapView() & showSatelliteView() below 
+    cartoLayer        : null,
+    orthoLayer        : null,
 
     /*
      * Projections - neither should need changing. displayProjection is only
@@ -87,12 +91,22 @@ otp.core.MapStatic = {
         otp.configure(this, config);
 
         this.map = otp.util.OpenLayersUtils.makeMap(this.mapDiv, this.options);
-        if (this.baseLayer == null) {
+        if (this.baseLayer == null)
+        {
             this.baseLayer = otp.util.OpenLayersUtils.makeMapBaseLayer(this.map, this.baseLayerOptions);
-        } else {
+            this.cartoLayer = this.baseLayer;
+            this.orthoLayer = this.baseLayer;
+        }
+        else
+        {
             this.map.addLayers(this.baseLayer);
-            if (this.baseLayer.length > 1) {
-                this.layerSwitchEnabled=true;
+            this.cartoLayer = this.map.layers[0];
+            this.orthoLayer = this.map.layers[1];
+
+            if(this.baseLayer.length > 1 && this.plannerOptions && this.plannerOptions.showLayerSwitcher !== false) {
+                this.showLayerSwitcher=true;
+            } else {
+                this.showLayerSwitcher=false;
             }
         }
         this.map.setBaseLayer(this.baseLayer, true);
@@ -102,9 +116,9 @@ otp.core.MapStatic = {
         otp.core.MapStatic.THIS = this;
 
         // if we have an empty array of controls, then add the defaults
-        if (this.options.controls != null && this.options.controls.length == 0)
+        if(this.options.controls != null && this.options.controls.length == 0)
         {
-            this.options.controls = otp.util.OpenLayersUtils.defaultControls(this.map, this.zoomWheelEnabled, this.handleRightClicks, this.permaLinkEnabled, this.attribution, this.historyEnabled, this.layerSwitchEnabled);
+            this.options.controls = otp.util.OpenLayersUtils.defaultControls(this.map, this.zoomWheelEnabled, this.handleRightClicks, this.permaLinkEnabled, this.attribution, this.historyEnabled, this.showLayerSwitcher);
         }
 
         var layerLoaded = false;
@@ -139,7 +153,7 @@ otp.core.MapStatic = {
                       self.defaultExtent.transform(self.dataProjection, self.map.getProjectionObject());
                       extentRetrieved = true;
                       if(layerLoaded){
-                          self.zoomToDefaultExtent();
+                          self.zoomToDefaultExtentSetter();
                       }
                 },
                 failure: function(xhr)
@@ -152,6 +166,7 @@ otp.core.MapStatic = {
         {
             // explicitly defined extent
             this.defaultExtent.transform(this.dataProjection, this.map.getProjectionObject());
+            this.zoomToDefaultExtentSetter();
             extentRetrieved = true;
         }
 
@@ -160,31 +175,16 @@ otp.core.MapStatic = {
         {
             layerLoaded = true;
             if (extentRetrieved) {
-                self.zoomToDefaultExtent();
+                self.zoomToDefaultExtentSetter();
             }
             self.map.baseLayer.events.un({loadend: zoomOnFirstLoad});
         };
         self.map.baseLayer.events.on({loadend: zoomOnFirstLoad});
     },
 
-
     /** */
-    zoomToDefaultExtent : function()
+    getContextMenu : function(cm)
     {
-        try
-        {
-            if(this.defaultExtent && this.defaultExtent !== 'automatic')
-            {
-                this.zoomToExtent(this.defaultExtent);
-            }
-        }
-        catch(e)
-        {}
-    },
-
-
-    /** */
-    getContextMenu : function(cm) {
         if(cm != null)
         {
             this.contextMenu = cm;
@@ -343,7 +343,20 @@ otp.core.MapStatic = {
     /** */
     zoomToExtent : function(extent)
     {
-        this.map.zoomToExtent(extent);
+        var success = false;
+        try
+        {
+            if(extent && extent.containsBounds)
+            {
+                this.map.zoomToExtent(extent);
+                success = true;
+            }
+        }
+        catch(e)
+        {
+            success = false;
+        }
+        return success;
     },
 
     /** */
@@ -361,6 +374,22 @@ otp.core.MapStatic = {
             self.pan(x, y);
 
         self.map.zoomTo(zoom);
+    },
+
+    /** a global scope zoom to extent */
+    zoomToDefaultExtent : function()
+    {
+        return otp.core.MapSingleton.zoomToExtent(otp.core.MapSingleton.defaultExtent);
+    },
+
+    /** performs a zoom to extent, and potentially overrides our map's zoomToExtent method with our global zte */
+    zoomToDefaultExtentSetter : function()
+    {
+        var success = this.zoomToExtent(this.defaultExtent);
+        if(success && this.plannerOptions.setMaxExtentToDefault)
+        {
+            this.map.zoomToMaxExtent = otp.core.MapSingleton.zoomToDefaultExtent;
+        }
     },
 
     /** */
@@ -397,9 +426,9 @@ otp.core.MapStatic = {
             // zoom in link if we're close in, else show the zoom out
             var zoom = "";
             if(self.map.getZoom() < self.CLOSE_ZOOM)
-                zoom = ' <a href="javascript:void;" onClick="otp.core.MapStatic.zoomAllTheWayIn(' + x + ',' + y  + ');">' + self.locale.contextMenu.zoomInHere + '</a>';
+                zoom = ' <a href="javascript:void(0);" onClick="otp.core.MapStatic.zoomAllTheWayIn(' + x + ',' + y  + ');">' + self.locale.contextMenu.zoomInHere + '</a>';
             else
-                zoom = ' <a href="javascript:void;" onClick="otp.core.MapStatic.zoomOut();">' + self.locale.contextMenu.zoomOutHere + '</a>';
+                zoom = ' <a href="javascript:void(0);" onClick="otp.core.MapStatic.zoomOut();">' + self.locale.contextMenu.zoomOutHere + '</a>';
 
             // IE can't do streetview in these map tooltips (freeze's the browser)
             if(Ext.isIE)
@@ -504,6 +533,27 @@ otp.core.MapStatic = {
         this.closeAllPopups();
     },
 
+    /** 
+     * showMapView is for a manual switch of base layers (as opposed to OpenLayer layer switcher) 
+     * assumes first entry in config.map.baseLayer is a map layer, and second entry is an ortho layer
+     */
+    showMapView : function()
+    {
+        if(this.cartoLayer)
+            this.map.setBaseLayer(this.cartoLayer, true);
+    },
+
+    /** 
+     * showSatelliteView is for a manual switch of base layers (as opposed to OpenLayer layer switcher) 
+     * assumes second entry in config.map.baseLayer is an ortho layer, and first entry is an map layer
+     */
+    showSatelliteView : function()
+    {
+        if(this.orthoLayer)
+            this.map.setBaseLayer(this.orthoLayer, true);
+    },
+    
+
     /**
      * Remove all OTP features from non base layers on the map
      */
@@ -518,12 +568,9 @@ otp.core.MapStatic = {
         for (var i = 0; i < this.map.layers.length; i++)
         {
             var layer = this.map.layers[i];
-            if (!layer.isBaseLayer && layer.OTP_LAYER)
+            if (!layer.isBaseLayer && layer.OTP_LAYER && layer.removeFeatures)
             {
-                if (layer.isVector)
-                {
-                    layer.removeFeatures(layer.features);
-                }
+                layer.removeFeatures(layer.features);
             }
         }
         Ext.each(this.allFeaturesRemoved, function(fn) {

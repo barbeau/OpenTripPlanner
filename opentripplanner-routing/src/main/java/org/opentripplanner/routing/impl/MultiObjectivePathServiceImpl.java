@@ -18,20 +18,28 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 
+import org.opentripplanner.common.geometry.DistanceLibrary;
+import org.opentripplanner.common.geometry.SphericalDistanceLibrary;
+import org.opentripplanner.common.pqueue.BinHeap;
 import org.opentripplanner.routing.algorithm.TraverseVisitor;
 import org.opentripplanner.routing.algorithm.strategies.BidirectionalRemainingWeightHeuristic;
+import org.opentripplanner.routing.algorithm.strategies.DefaultRemainingWeightHeuristic;
 import org.opentripplanner.routing.algorithm.strategies.RemainingWeightHeuristic;
-import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.RoutingRequest;
+import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.graph.Edge;
 import org.opentripplanner.routing.graph.Vertex;
-import org.opentripplanner.common.pqueue.BinHeap;
+import org.opentripplanner.routing.pathparser.BasicPathParser;
+import org.opentripplanner.routing.pathparser.NoThruTrafficPathParser;
+import org.opentripplanner.routing.pathparser.PathParser;
+import org.opentripplanner.routing.services.GraphService;
 import org.opentripplanner.routing.services.PathService;
 import org.opentripplanner.routing.spt.GraphPath;
 import org.opentripplanner.util.monitoring.MonitoringStore;
 import org.opentripplanner.util.monitoring.MonitoringStoreFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 /**
  * Implements a multi-objective goal-directed search algorithm like the one in Sec. 4.2 of: 
  * Perny and Spanjaard. Near Admissible Algorithms for Multiobjective Search.
@@ -60,15 +68,21 @@ import org.slf4j.LoggerFactory;
 //@Component
 public class MultiObjectivePathServiceImpl implements PathService {
 
+    @Autowired public GraphService graphService;
+
     private static final Logger LOG = LoggerFactory.getLogger(MultiObjectivePathServiceImpl.class);
 
     private static final MonitoringStore store = MonitoringStoreFactory.getStore();
+
+    private static final double MAX_WALK = 100000;
     
     private double[] _timeouts = new double[] {4, 2, 0.6, 0.4}; // seconds
     
     private double _maxPaths = 4;
 
     private TraverseVisitor traverseVisitor;
+
+    private DistanceLibrary distanceLibrary = SphericalDistanceLibrary.getInstance();
 
     /**
      * Give up on searching for itineraries after this many seconds have elapsed.
@@ -91,11 +105,23 @@ public class MultiObjectivePathServiceImpl implements PathService {
     @Override
     public List<GraphPath> getPaths(RoutingRequest options) {
 
-        // always use the bidirectional heuristic because the others are not precise enough
-        RemainingWeightHeuristic heuristic = new BidirectionalRemainingWeightHeuristic(options.rctx.graph);
-        // TODO: some way to ensure that this is set to bidi heuristic
-        //options.rctx.remainingWeightHeuristic = heuristic;
-        
+        if (options.rctx == null) {
+            options.setRoutingContext(graphService.getGraph(options.getRouterId()));
+            // move into setRoutingContext ?
+            options.rctx.pathParsers = new PathParser[] { new BasicPathParser(),
+                    new NoThruTrafficPathParser() };
+        }
+
+        RemainingWeightHeuristic heuristic;
+        if (options.getModes().isTransit()) {
+            LOG.debug("Transit itinerary requested.");
+            // always use the bidirectional heuristic because the others are not precise enough
+            heuristic = new BidirectionalRemainingWeightHeuristic(options.rctx.graph);
+        } else {
+            LOG.debug("Non-transit itinerary requested.");
+            heuristic = new DefaultRemainingWeightHeuristic();
+        }        
+                
         // the states that will eventually be turned into paths and returned
         List<State> returnStates = new LinkedList<State>();
 
@@ -106,12 +132,14 @@ public class MultiObjectivePathServiceImpl implements PathService {
         Vertex targetVertex = options.rctx.target;
         
         // increase maxWalk repeatedly in case hard limiting is in use 
-        WALK: for (double maxWalk = options.getMaxWalkDistance();
-                          maxWalk < 100000 && returnStates.isEmpty();
-                          maxWalk *= 2) {
+        WALK: for (double maxWalk = options.getMaxWalkDistance(); returnStates.isEmpty(); maxWalk *= 2) {
+            if (maxWalk != Double.MAX_VALUE && maxWalk > MAX_WALK) {
+                break;
+            }
             LOG.debug("try search with max walk {}", maxWalk);
             // increase maxWalk if settings make trip impossible
-            if (maxWalk < Math.min(originVertex.distance(targetVertex), 
+            if (maxWalk < Math.min(distanceLibrary.distance(originVertex.getCoordinate(), 
+                    targetVertex.getCoordinate()), 
                 originVertex.getDistanceToNearestTransitStop() +
                 targetVertex.getDistanceToNearestTransitStop())) 
                 continue WALK;
@@ -119,7 +147,8 @@ public class MultiObjectivePathServiceImpl implements PathService {
             
             // cap search / heuristic weight
             final double AVG_TRANSIT_SPEED = 25; // m/sec 
-            double cutoff = (originVertex.distance(targetVertex) * 1.5) / AVG_TRANSIT_SPEED; // wait time is irrelevant in the heuristic
+            double cutoff = (distanceLibrary.distance(originVertex.getCoordinate(),
+                    targetVertex.getCoordinate()) * 1.5) / AVG_TRANSIT_SPEED; // wait time is irrelevant in the heuristic
             cutoff += options.getMaxWalkDistance() * options.walkReluctance;
             options.maxWeight = cutoff;
             
@@ -141,7 +170,7 @@ public class MultiObjectivePathServiceImpl implements PathService {
                 if (System.currentTimeMillis() > endTime) {
                     LOG.debug("timeout at {} msec", System.currentTimeMillis() - startTime);
                     if (returnStates.isEmpty())
-                        continue WALK;
+                        break WALK; // disable walk distance increases
                     else {
                         storeMemory();
                         break WALK;
@@ -191,6 +220,7 @@ public class MultiObjectivePathServiceImpl implements PathService {
                         }
 
                         double h = heuristic.computeForwardWeight(new_sv, targetVertex);
+                        if (h == Double.MAX_VALUE) continue;
 //                    for (State bs : boundingStates) {
 //                        if (eDominates(bs, new_sv)) {
 //                            continue STATE;
@@ -257,11 +287,15 @@ public class MultiObjectivePathServiceImpl implements PathService {
     // TODO: move into an epsilon-dominance shortest path tree
     private boolean eDominates(State s0, State s1) {
         final double EPSILON = 0.05;
-        if (s0.similarTripSeq(s1)) {
+        if (s0.similarRouteSequence(s1)) {
             return s0.getWeight() <= s1.getWeight() * (1 + EPSILON) &&
-                    s0.getTime() <= s1.getTime() * (1 + EPSILON) &&
+                    s0.getElapsedTime() <= s1.getElapsedTime() * (1 + EPSILON) &&
                     s0.getWalkDistance() <= s1.getWalkDistance() * (1 + EPSILON) && 
-                    s0.getNumBoardings() <= s1.getNumBoardings();
+                    s0.getNumBoardings() <= s1.getNumBoardings() &&
+                    (s0.getWeight() < s1.getWeight() ||
+                     s0.getElapsedTime() < s1.getElapsedTime() ||
+                     s0.getWalkDistance() < s1.getWalkDistance() ||
+                     s0.getNumBoardings() < s1.getNumBoardings());
         } else {
             return false;
         }

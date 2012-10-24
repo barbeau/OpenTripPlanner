@@ -26,6 +26,7 @@ import java.io.ObjectOutputStream;
 import java.io.ObjectStreamClass;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -35,25 +36,29 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.onebusaway.gtfs.impl.calendar.CalendarServiceImpl;
+import org.onebusaway.gtfs.model.Agency;
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.calendar.CalendarServiceData;
 import org.onebusaway.gtfs.model.calendar.ServiceDate;
 import org.onebusaway.gtfs.services.calendar.CalendarService;
+import org.opentripplanner.common.MavenVersion;
+import org.opentripplanner.gbannotation.GraphBuilderAnnotation;
+import org.opentripplanner.gbannotation.NoFutureDates;
 import org.opentripplanner.model.GraphBundle;
-import org.opentripplanner.routing.contraction.ContractionHierarchySet;
-import org.opentripplanner.routing.core.GraphBuilderAnnotation;
-import org.opentripplanner.routing.core.MortonVertexComparator;
+import org.opentripplanner.routing.core.MortonVertexComparatorFactory;
 import org.opentripplanner.routing.core.TransferTable;
-import org.opentripplanner.routing.core.GraphBuilderAnnotation.Variety;
+import org.opentripplanner.routing.edgetype.TimetableSnapshotSource;
 import org.opentripplanner.routing.impl.StreetVertexIndexServiceImpl;
 import org.opentripplanner.routing.services.StreetVertexIndexService;
-import org.opentripplanner.common.MavenVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.collect.HashMultiset;
+import com.google.common.collect.Multiset;
 import com.vividsolutions.jts.geom.Envelope;
 
 /**
@@ -67,7 +72,7 @@ public class Graph implements Serializable {
     private final MavenVersion mavenVersion = MavenVersion.VERSION;
 
     private static final Logger LOG = LoggerFactory.getLogger(Graph.class);
-    
+
     // transit feed validity information in seconds since epoch
     private long transitServiceStarts = Long.MAX_VALUE;
 
@@ -78,13 +83,13 @@ public class Graph implements Serializable {
     private TransferTable transferTable = new TransferTable();
 
     private GraphBundle bundle;
-    
+
     /* vertex index by name is reconstructed from edges */
     private transient Map<String, Vertex> vertices;
-
-    private transient ContractionHierarchySet hierarchies;
     
     private transient CalendarService calendarService;
+    
+    private boolean debugData = true;
     
     private transient List<Vertex> vertexById;
 
@@ -94,11 +99,20 @@ public class Graph implements Serializable {
     
     public transient StreetVertexIndexService streetIndex;
     
-    private List<GraphBuilderAnnotation> graphBuilderAnnotations = new LinkedList<GraphBuilderAnnotation>();
+    public transient TimetableSnapshotSource timetableSnapshotSource = null;
+    
+    private transient List<GraphBuilderAnnotation> graphBuilderAnnotations = 
+            new LinkedList<GraphBuilderAnnotation>(); // initialize for tests
 
-    private Collection<String> agencies = new HashSet<String>();
+    private Collection<String> agenciesIds = new HashSet<String>();
+
+    private Collection<Agency> agencies = new HashSet<Agency>();
 
     private transient Set<Edge> temporaryEdges;
+
+    private VertexComparatorFactory vertexComparatorFactory = new MortonVertexComparatorFactory();
+
+    private transient TimeZone timeZone = null;
 
     public Graph(Graph basedOn) {
         this();
@@ -117,7 +131,7 @@ public class Graph implements Serializable {
      * 
      * @param vv the vertex to add
      */
-    protected void addVertex(Vertex v) {
+    public void addVertex(Vertex v) {
         Vertex old = vertices.put(v.getLabel(), v);
         if (old != null) {
             if (old == v)
@@ -216,7 +230,7 @@ public class Graph implements Serializable {
         }
         for (String agency : agencies) {
             if (!agenciesWithFutureDates.contains(agency)) {
-                LOG.warn(GraphBuilderAnnotation.register(this, Variety.NO_FUTURE_DATES, agency));
+                LOG.warn(this.addBuilderAnnotation(new NoFutureDates(agency)));
             }
         }
     }
@@ -252,14 +266,25 @@ public class Graph implements Serializable {
     }
     
     /* this will require a rehash of any existing hashtables keyed on vertices */
-    private void renumberVerticesAndEdges() {
-        this.vertexById = new ArrayList<Vertex>(getVertices());
-        Collections.sort(this.vertexById, new MortonVertexComparator(this.vertexById));
+    public void renumberVerticesAndEdges() {
+        this.vertexById = Arrays.asList(new Vertex[AbstractVertex.getMaxIndex()]);
+        for (Vertex v : getVertices()) {
+            vertexById.set(v.getIndex(), v);
+        }
+        //Collections.sort(this.vertexById, getVertexComparatorFactory().getComparator(vertexById));
         this.edgeById = new HashMap<Integer, Edge>();
         this.idForEdge = new HashMap<Edge, Integer>();
+        // need to renumber vertices before edges, because vertex indices are
+        // used as hashcodes, and vertex hashcodes are used for edge hashcodes
         int i = 0;
+        /*
         for (Vertex v : this.vertexById) {
-            v.setIndex(i);
+            v.setIndex(i++);
+        }
+        i = 0;
+        */
+        for (Vertex v : this.vertexById) {
+            if (v == null) continue;
             int j = 0;
             for (Edge e : v.getOutgoing()) {
                 int eid = (i*100) + j;
@@ -279,38 +304,42 @@ public class Graph implements Serializable {
         temporaryEdges = Collections.newSetFromMap(new ConcurrentHashMap<Edge, Boolean>()); 
     }
 
-    public void addBuilderAnnotation(GraphBuilderAnnotation gba) {
-    	this.graphBuilderAnnotations.add(gba);
+    /**
+     * Add a graph builder annotation to this graph's list of graph builder annotations.
+     * The return value of this method is the annotation's message, which allows for a single-line
+     * idiom that creates, registers, and logs a new graph builder annotation:
+     * log.warning(graph.addBuilderAnnotation(new SomeKindOfAnnotation(param1, param2)));
+     * 
+     * If the graphBuilderAnnotations field of this graph is null, the annotation is not actually 
+     * saved, but the message is still returned. This allows annotation registration to be turned
+     * off, saving memory and disk space when the user is not interested in annotations.
+     */
+    public String addBuilderAnnotation(GraphBuilderAnnotation gba) {
+        String ret = gba.getMessage();
+        if (this.graphBuilderAnnotations != null)
+            this.graphBuilderAnnotations.add(gba);
+    	return ret;
     }
 
     public List<GraphBuilderAnnotation> getBuilderAnnotations() {
     	return this.graphBuilderAnnotations;
     }
 
-    public void setHierarchies(ContractionHierarchySet chs) {
-        this.hierarchies = chs;
-    }
-
-    public ContractionHierarchySet getHierarchies() {
-        return hierarchies;
-    }
-
     /* (de) serialization */
     
     public enum LoadLevel {
-        BASIC, FULL, NO_HIERARCHIES, DEBUG;
+        BASIC, FULL, DEBUG;
     }
     
-    public static Graph load(File file, LoadLevel level) 
-        throws IOException, ClassNotFoundException {
+    public static Graph load(File file, LoadLevel level) throws IOException, ClassNotFoundException {
         LOG.info("Reading graph " + file.getAbsolutePath() + " ...");
         // cannot use getClassLoader() in static context
         ObjectInputStream in = new ObjectInputStream (new FileInputStream(file));
         return load(in, level);
     }
-    
-    public static Graph load(ClassLoader classLoader, File file, LoadLevel level) 
-        throws IOException, ClassNotFoundException {
+
+    public static Graph load(ClassLoader classLoader, File file, LoadLevel level)
+            throws IOException, ClassNotFoundException {
         LOG.info("Reading graph " + file.getAbsolutePath() + " with alternate classloader ...");
         ObjectInputStream in = new GraphObjectInputStream(
                 new BufferedInputStream (new FileInputStream(file)), classLoader);
@@ -323,11 +352,11 @@ public class Graph implements Serializable {
     }
 
     @SuppressWarnings("unchecked")
-	private static Graph load(ObjectInputStream in, LoadLevel level) 
+	public static Graph load(ObjectInputStream in, LoadLevel level) 
         throws IOException, ClassNotFoundException {
         try {
             Graph graph = (Graph) in.readObject();
-            LOG.debug("Basic graph info and annotations read.");
+            LOG.debug("Basic graph info read.");
             if (graph.graphVersionMismatch())
                 throw new RuntimeException("Graph version mismatch detected.");
             if (level == LoadLevel.BASIC)
@@ -347,17 +376,17 @@ public class Graph implements Serializable {
             LOG.info("Main graph read. |V|={} |E|={}", graph.countVertices(), graph.countEdges());
             graph.streetIndex = new StreetVertexIndexServiceImpl(graph);
             LOG.debug("street index built.");
-            if (level == LoadLevel.NO_HIERARCHIES)
-                return graph;
-            graph.hierarchies = (ContractionHierarchySet) in.readObject();
-            if (graph.hierarchies != null)
-                LOG.debug("Contraction hierarchies read.");
             if (level == LoadLevel.FULL)
                 return graph;
-            graph.vertexById = (List<Vertex>) in.readObject();
-            graph.edgeById = (Map<Integer, Edge>) in.readObject();
-            graph.idForEdge = (Map<Edge, Integer>) in.readObject();
-            LOG.debug("Debug info read.");
+            if (graph.debugData) {
+                graph.graphBuilderAnnotations = (List<GraphBuilderAnnotation>) in.readObject();
+                graph.vertexById = (List<Vertex>) in.readObject();
+                graph.edgeById = (Map<Integer, Edge>) in.readObject();
+                graph.idForEdge = (Map<Edge, Integer>) in.readObject();
+                LOG.debug("Debug info read.");
+            } else {
+                LOG.warn("Graph file does not contain debug data.");
+            }
             return graph;
         } catch (InvalidClassException ex) {
             LOG.error("Stored graph is incompatible with this version of OTP, please rebuild it.");
@@ -401,34 +430,43 @@ public class Graph implements Serializable {
     public void save(File file) throws IOException {
         LOG.info("Main graph size: |V|={} |E|={}", this.countVertices(), this.countEdges());
         LOG.info("Writing graph " + file.getAbsolutePath() + " ...");
-        ObjectOutputStream out = new ObjectOutputStream(
-                new BufferedOutputStream(new FileOutputStream(file)));
+        ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(
+                new FileOutputStream(file)));
         try {
-            LOG.debug("Consolidating edges...");
-            // this is not space efficient
-            List<Edge> edges = new ArrayList<Edge>(this.countEdges());
-            for (Vertex v : getVertices()) {
-                // there are assumed to be no edges in an incoming list that are not in an outgoing
-                // list
-                edges.addAll(v.getOutgoing());
-                if (v.getDegreeOut() + v.getDegreeIn() == 0)
-                    LOG.debug("vertex {} has no edges, it will not survive serialization.", v);
-            }
-            LOG.debug("Assigning vertex/edge ID numbers...");
-            this.renumberVerticesAndEdges();
-            LOG.debug("Writing edges...");
-            out.writeObject(this);
-            out.writeObject(edges);
-            out.writeObject(this.hierarchies);
-            LOG.debug("Writing debug data...");
-            out.writeObject(this.vertexById);
-            out.writeObject(this.edgeById);
-            out.writeObject(this.idForEdge);
+            save(out);
             out.close();
         } catch (RuntimeException e) {
             out.close();
-            file.delete(); //remove half-written file
+            file.delete(); // remove half-written file
             throw e;
+        }
+    }
+
+    public void save(ObjectOutputStream out) throws IOException {
+        LOG.debug("Consolidating edges...");
+        // this is not space efficient
+        List<Edge> edges = new ArrayList<Edge>(this.countEdges());
+        for (Vertex v : getVertices()) {
+            // there are assumed to be no edges in an incoming list that are not
+            // in an outgoing list
+            edges.addAll(v.getOutgoing());
+            if (v.getDegreeOut() + v.getDegreeIn() == 0)
+                LOG.debug("vertex {} has no edges, it will not survive serialization.", v);
+        }
+        LOG.debug("Assigning vertex/edge ID numbers...");
+        this.renumberVerticesAndEdges();
+        LOG.debug("Writing edges...");
+        out.writeObject(this);
+        out.writeObject(edges);
+        if (debugData) {
+            // should we make debug info generation conditional? 
+            LOG.debug("Writing debug data...");
+            out.writeObject(this.graphBuilderAnnotations);
+            out.writeObject(this.vertexById);
+            out.writeObject(this.edgeById);
+            out.writeObject(this.idForEdge);
+        } else {
+            LOG.debug("Skipping debug data.");
         }
         LOG.info("Graph written.");
     }
@@ -486,11 +524,16 @@ public class Graph implements Serializable {
     }
 
     public Collection<String> getAgencyIds() {
+        return agenciesIds;
+    }
+
+    public Collection<Agency> getAgencies() {
         return agencies;
     }
 
-    public void addAgencyId(String agency) {
+    public void addAgency(Agency agency) {
         agencies.add(agency);
+        agenciesIds.add(agency.getId());
     }
 
     public void addTemporaryEdge(Edge edge) {
@@ -506,6 +549,57 @@ public class Graph implements Serializable {
 
     public Collection<Edge> getTemporaryEdges() {
         return temporaryEdges;
+    }
+
+    public VertexComparatorFactory getVertexComparatorFactory() {
+        return vertexComparatorFactory;
+    }
+
+    public void setVertexComparatorFactory(VertexComparatorFactory vertexComparatorFactory) {
+        this.vertexComparatorFactory = vertexComparatorFactory;
+    }
+    
+    /**
+     * Returns the time zone for the first agency in this graph. This is used to interpret
+     * times in API requests. The JVM default time zone cannot be used because we support 
+     * multiple graphs on one server via the routerId.
+     * Ideally we would want to interpret times in the time zone of the geographic location
+     * where the origin/destination vertex or board/alight event is located. This may become
+     * necessary when we start making graphs with long distance train, boat, or air services. 
+     */
+    public TimeZone getTimeZone() {
+        if (timeZone  == null) {
+            Collection<String> agencyIds = this.getAgencyIds();
+            if (agencyIds.size() == 0) {
+                timeZone = TimeZone.getTimeZone("GMT");
+                LOG.warn("graph contains no agencies; API request times will be interpreted as GMT.");
+            } else {
+                CalendarService cs = this.getCalendarService();
+                for (String agencyId : agencyIds) {
+                    TimeZone tz = cs.getTimeZoneForAgencyId(agencyId);
+                    if (timeZone == null) {
+                        LOG.debug("graph time zone set to {}", tz);
+                        timeZone = tz;
+                    } else if ( ! timeZone.equals(tz)) {
+                        LOG.error("agency time zone differs from graph time zone: {}", tz);
+                    }
+                }
+            }
+        }
+        return timeZone;
+    }
+
+    public void summarizeBuilderAnnotations() {
+        List<GraphBuilderAnnotation> gbas = this.graphBuilderAnnotations;
+        Multiset<Class<? extends GraphBuilderAnnotation>> classes = HashMultiset.create();
+        LOG.info("Summary (number of each type of annotation):");
+        for (GraphBuilderAnnotation gba : gbas)
+            classes.add(gba.getClass());
+        for (Multiset.Entry<Class<? extends GraphBuilderAnnotation>> e : classes.entrySet()) {
+            String name = e.getElement().getSimpleName();
+            int count = e.getCount();
+            LOG.info("    {} - {}", name, count);
+        }
     }
 
 }

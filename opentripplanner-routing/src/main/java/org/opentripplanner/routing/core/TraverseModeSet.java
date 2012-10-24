@@ -15,8 +15,8 @@ package org.opentripplanner.routing.core;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
 /**
  * A set of traverse modes -- typically, one non-transit mode (walking, biking, car) and zero or
@@ -62,6 +62,9 @@ public class TraverseModeSet implements Cloneable, Serializable {
     public TraverseModeSet(String modelist) {
         modes = 0;
         for (String modeStr : modelist.split(",")) {
+            if (modeStr.length() == 0) {
+                continue;
+            }
             setMode(TraverseMode.valueOf(modeStr), true);
         }
 
@@ -107,7 +110,7 @@ public class TraverseModeSet implements Cloneable, Serializable {
         return 0;
     }
 
-    public TraverseModeSet(List<TraverseMode> modeList) {
+    public TraverseModeSet(Collection<TraverseMode> modeList) {
         this(modeList.toArray(new TraverseMode[0]));
     }
     
@@ -281,7 +284,7 @@ public class TraverseModeSet implements Cloneable, Serializable {
         }
     }
 
-    /** Returns true if any the trip may use some transit mode */
+    /** Returns true if the trip may use some transit mode */
     public boolean isTransit() {
         return (modes & (MODE_TRANSIT)) != 0;
     }
@@ -368,7 +371,7 @@ public class TraverseModeSet implements Cloneable, Serializable {
      * @param restrictedModes A set of restricted modes
      * @return false If *at least one* of the non-transit mode is not restricted.
      */
-    public boolean isRestricted(Set<TraverseMode> restrictedModes) {
+    public boolean isRestricted(TraverseModeSet restrictedModes) {
         // For each non-transit mode, test if it's set and not restricted.
         // If so, then the traverse mode set is not restricted.
         if (getWalk() && !restrictedModes.contains(TraverseMode.WALK))

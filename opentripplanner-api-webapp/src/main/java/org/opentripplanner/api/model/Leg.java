@@ -15,18 +15,19 @@ package org.opentripplanner.api.model;
 
 import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.Date;
 import java.util.List;
 import java.util.TimeZone;
-
-import org.opentripplanner.routing.core.TraverseMode;
-import org.opentripplanner.routing.patch.Alert;
 
 import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlElementWrapper;
 
+import org.opentripplanner.routing.core.TraverseMode;
+import org.opentripplanner.routing.patch.Alert;
 import org.opentripplanner.util.model.EncodedPolylineBean;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
 /**
  * One leg of a trip -- that is, a temporally continuous piece of the journey that takes place on a
@@ -54,6 +55,7 @@ public class Leg {
      * The mode (e.g., <code>Walk</code>) used when traversing this leg.
      */
     @XmlAttribute
+    @JsonSerialize
     public String mode = TraverseMode.WALK.toString();
 
     /**
@@ -61,33 +63,48 @@ public class Leg {
      * the street being traversed.
      */
     @XmlAttribute
+    @JsonSerialize
     public String route = "";
 
     @XmlAttribute
+    @JsonSerialize
     public String agencyName;
 
     @XmlAttribute
+    @JsonSerialize
     public String agencyUrl;
 
     @XmlAttribute
+    @JsonSerialize
     public int agencyTimeZoneOffset;
 
     /**
      * For transit leg, the route's (background) color (if one exists). For non-transit legs, null.
      */
     @XmlAttribute
+    @JsonSerialize
     public String routeColor = null;
+    
+    /**
+     * For transit legs, the ID of the route.
+     * For non-transit legs, null.
+     */
+    @XmlAttribute
+    @JsonSerialize
+    public String routeId = null;
 
     /**
      * For transit leg, the route's text color (if one exists). For non-transit legs, null.
      */
     @XmlAttribute
+    @JsonSerialize
     public String routeTextColor = null;
 
     /**
      * For transit legs, if the rider should stay on the vehicle as it changes route names.
      */
     @XmlAttribute
+    @JsonSerialize
     public Boolean interlineWithPreviousLeg;
 
     
@@ -95,12 +112,14 @@ public class Leg {
      * For transit leg, the trip's short name (if one exists). For non-transit legs, null.
      */
     @XmlAttribute
+    @JsonSerialize
     public String tripShortName = null;
 
     /**
      * For transit legs, the headsign of the bus or train being used. For non-transit legs, null.
      */
     @XmlAttribute
+    @JsonSerialize
     public String headsign = null;
 
     /**
@@ -108,6 +127,7 @@ public class Leg {
      * For non-transit legs, null.
      */
     @XmlAttribute
+    @JsonSerialize
     public String agencyId = null;
     
     /**
@@ -115,6 +135,7 @@ public class Leg {
      * For non-transit legs, null.
      */
     @XmlAttribute
+    @JsonSerialize
     public String tripId = null;
     
     /**
@@ -133,8 +154,9 @@ public class Leg {
      * This field is optional i.e. it is always null unless "showIntermediateStops" parameter is set to "true" in the planner request.
      */
     @XmlElementWrapper(name = "intermediateStops")
+    @JsonProperty(value="intermediateStops")
     public List<Place> stop;
-    
+
     /**
      * The leg's geometry.
      */
@@ -144,6 +166,7 @@ public class Leg {
      * A series of turn by turn instructions used for walking, biking and driving. 
      */
     @XmlElementWrapper(name = "steps")
+    @JsonProperty(value="steps")
     public List<WalkStep> walkSteps;
 
     /**
@@ -151,24 +174,31 @@ public class Leg {
      * alerts
      */
     @XmlElement
+    @JsonSerialize
     private List<Note> notes;
 
     @XmlElement
+    @JsonSerialize
     private List<Alert> alerts;
 
     @XmlAttribute
-	public String routeShortName;
+    @JsonSerialize
+    public String routeShortName;
 
     @XmlAttribute
-	public String routeLongName;
+    @JsonSerialize
+    public String routeLongName;
 
     @XmlAttribute
+    @JsonSerialize
     public String boardRule;
 
     @XmlAttribute
+    @JsonSerialize
     public String alightRule;
 
     @XmlAttribute
+    @JsonSerialize
     public Boolean rentedBike;
 
     /**
@@ -193,6 +223,7 @@ public class Leg {
      * The leg's duration in milliseconds
      */
     @XmlElement
+    @JsonSerialize
     public long getDuration() {
         return endTime.getTimeInMillis() - startTime.getTimeInMillis();
     }

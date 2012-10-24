@@ -44,6 +44,7 @@ otp.planner.Planner = {
     maxTransfers            : null,
     itineraryMessages       : null,
     options                 : null,  // see config.js - planner.options
+    appName                 : "OpenTripPlanner",
 
     // new tab (itineraries tabs) management
     m_tabs        : null,
@@ -170,10 +171,13 @@ otp.planner.Planner = {
     },
 
     /** */
-    clear : function() {
+    clear : function()
+    {
         this.showFormTab();
         this.m_forms.clear();
         this.m_renderer.clear();
+        this.controller.deactivate(this.CLASS_NAME);
+        this.closeElevation();
     },
 
     /** */
@@ -335,36 +339,39 @@ otp.planner.Planner = {
     {
         this.m_renderer.clear();
         var newTab = this.m_tabs[activeTab.id];
-        
+
         // remove the topo graph from the south panel, if applicable 
         var oldTab = this.m_tabs[this.m_activeTabID];
-        if(oldTab != null && oldTab.topoRenderer != null) {
-            oldTab.topoRenderer.removeFromPanel();
+        if(oldTab != null && oldTab.topoRenderer != null)
+        {
+            this.ui.innerSouth.remove(oldTab.topoRenderer.extWrapper);
         }
 
         // draw the new tab, if applicable
-        if (newTab != null) {
+        if (newTab != null)
+        {
             this.m_activeTabID = activeTab.id;
             newTab.draw();
-        } else {
+        }
+        else
+        {
             this.m_activeTabID = 0;
             this.controller.deactivate(this.CLASS_NAME);
             this.m_forms.panelActivated();
         }
-        
+
         // hide the south panel, if empty
-        if (this.ui.innerSouth.isVisible()  && this.ui.innerSouth.getEl().dom.childNodes.length == 0) {
-            this.ui.innerSouth.hide();
-            this.ui.viewport.doLayout();
-        }
+        if (this.ui.innerSouth.isVisible()  && this.ui.innerSouth.items.getCount() == 0)
+            this.closeElevation();
 
         // update the dynamic link to the current trip plan
-        // TODO: is the 'plan a trip' tab always tab 0?
-        if (this.m_activeTabID === 0) {
+        if (this.m_activeTabID === 0)
+        {
             location.hash = '#/';
-            document.title = 'OpenTripPlanner Map';
+            document.title = this.appName;
         }
-        else {
+        else
+        {
             // we're on a TP tab
             // template for the dynamic url
             if (this.m_hashTemplate == null) {
@@ -372,10 +379,21 @@ otp.planner.Planner = {
             }
             location.hash = this.m_hashTemplate.apply(newTab.request);
             // update the title so folks bookmark something meaningful
-            document.title = newTab.getTitle() + ' - OpenTripPlanner Map';
+            document.title = newTab.getTitle() + ' - ' + this.appName;
         }
     },
 
+    /** */
+    closeElevation : function() 
+    {
+        try
+        {
+            this.ui.innerSouth.hide();
+            this.ui.viewport.doLayout();
+        }
+        catch(e)
+        {}
+    },
 
     /**
      * adds a form panel to a new tab in the trip planner tab'd panel.

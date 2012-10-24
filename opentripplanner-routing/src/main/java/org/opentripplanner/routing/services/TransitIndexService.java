@@ -20,6 +20,7 @@ import org.onebusaway.gtfs.model.Agency;
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.gtfs.model.ServiceCalendar;
 import org.onebusaway.gtfs.model.ServiceCalendarDate;
+import org.onebusaway.gtfs.model.Stop;
 import org.opentripplanner.routing.core.TraverseMode;
 import org.opentripplanner.routing.edgetype.PreAlightEdge;
 import org.opentripplanner.routing.edgetype.PreBoardEdge;
@@ -41,6 +42,8 @@ public interface TransitIndexService {
     public List<AgencyAndId> getRoutesForStop(AgencyAndId stop);
 
     public Collection<String> getDirectionsForRoute(AgencyAndId route);
+    
+    public Collection<Stop> getStopsForRoute(AgencyAndId route);
 
     public List<TraverseMode> getAllModes();
 
@@ -58,5 +61,20 @@ public interface TransitIndexService {
 
     public Agency getAgency(String id);
 
+    /**
+     * Returns the transit center of the city -- the place where there is the highest
+     * concentration of transit.  This isn't intended to be a rigorously computed result;
+     * it's intended for display.
+     * @return
+     */
     public Coordinate getCenter();
+
+    /**
+     * Returns the overnight service break time in seconds past midnight. If none is found (that is,
+     * there is a trip every minute of the day), returns -1. This may give weird results on tiny
+     * systems with irregular hours of service, but we don't expect the relevant APIs to be used in
+     * these cases.
+     * 
+     */
+    int getOvernightBreak();
 }

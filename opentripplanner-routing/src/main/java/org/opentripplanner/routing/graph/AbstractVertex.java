@@ -25,12 +25,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import javax.xml.bind.annotation.XmlTransient;
 
 import org.opentripplanner.common.MavenVersion;
-import org.opentripplanner.common.geometry.DistanceLibrary;
-import org.opentripplanner.common.geometry.Pointlike;
-import org.opentripplanner.routing.edgetype.OutEdge;
-import org.opentripplanner.routing.edgetype.PlainStreetEdge;
 import org.opentripplanner.routing.edgetype.StreetEdge;
-import org.opentripplanner.routing.edgetype.TurnEdge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,7 +41,7 @@ public abstract class AbstractVertex implements Vertex {
 
     private int index;
     
-    private transient int groupIndex = -1;
+    private int groupIndex = -1;
 
     /* short debugging name */
     private final String label;
@@ -82,27 +77,8 @@ public abstract class AbstractVertex implements Vertex {
         this(g, label, x, y);
         this.name = name;
     }
-
     
     /* PUBLIC METHODS */
-    
-    /** Distance in meters to the coordinate */
-    @Override
-    public double distance(Coordinate c) {
-        return DistanceLibrary.distance(getY(), getX(), c.y, c.x);
-    }
-
-    /** Distance in meters to the vertex */
-    @Override
-    public double distance(Pointlike p) {
-        return DistanceLibrary.distance(getLat(), getLon(), p.getLat(), p.getLon());
-    }
-    
-    /** Fast, slightly approximated, under-estimated distance in meters to the vertex */
-    @Override
-    public double fastDistance(Pointlike p) {
-        return DistanceLibrary.fastDistance(getLat(), getLon(), p.getLat(), p.getLon());
-    }
 
     @Override
     public String toString() {
@@ -127,6 +103,9 @@ public abstract class AbstractVertex implements Vertex {
     
     @Override
     public boolean removeOutgoing(Edge ee) {
+        if (!outgoing.contains(ee)) {
+            LOG.error("Removing edge which isn't connected to this vertex");
+        }
         boolean removed = outgoing.remove(ee);
         if (outgoing.contains(ee)) {
             LOG.error("edge {} still in edgelist of {} after removed. there must have been multiple copies.");
@@ -151,6 +130,9 @@ public abstract class AbstractVertex implements Vertex {
     
     @Override
     public boolean removeIncoming(Edge ee) {
+        if (!incoming.contains(ee)) {
+            LOG.error("Removing edge which isn't connected to this vertex");
+        }
         boolean removed = incoming.remove(ee);
         if (incoming.contains(ee)) {
             LOG.error("edge {} still in edgelist of {} after removed. there must have been multiple copies.");
@@ -196,12 +178,10 @@ public abstract class AbstractVertex implements Vertex {
         return y;
     }
 
-    @Override
     public double getLon() {
         return x;
     }
 
-    @Override
     public double getLat() {
         return y;
     }
@@ -285,7 +265,7 @@ public abstract class AbstractVertex implements Vertex {
     public List<Edge> getOutgoingStreetEdges() {
         List<Edge> result = new ArrayList<Edge>();
         for (Edge out : this.getOutgoing()) {
-            if (!(out instanceof TurnEdge || out instanceof OutEdge || out instanceof PlainStreetEdge)) {
+            if (!(out instanceof StreetEdge)) {
                 continue;
             }
             result.add((StreetEdge) out);

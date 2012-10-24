@@ -37,11 +37,11 @@ public class TestBikeRental extends TestCase {
     public void testBasic() throws Exception {
         // generate a very simple graph
         Graph graph = new Graph();
-        StreetVertex v1 = new IntersectionVertex(graph, "v1", new Coordinate(-77.0492, 38.856),
+        StreetVertex v1 = new IntersectionVertex(graph, "v1", -77.0492, 38.856,
                 "v1");
-        StreetVertex v2 = new IntersectionVertex(graph, "v2", new Coordinate(-77.0492, 38.857),
+        StreetVertex v2 = new IntersectionVertex(graph, "v2", -77.0492, 38.857,
                 "v2");
-        StreetVertex v3 = new IntersectionVertex(graph, "v3", new Coordinate(-77.0492, 38.858),
+        StreetVertex v3 = new IntersectionVertex(graph, "v3", -77.0492, 38.858,
                 "v3");
 
         Edge walk = new PlainStreetEdge(v1, v2, GeometryUtils.makeLineString(-77.0492, 38.856,
@@ -60,16 +60,7 @@ public class TestBikeRental extends TestCase {
         GraphPath path = tree.getPath(v3, false);
         assertNull(path);
 
-        // or biking
-        options = new RoutingRequest(new TraverseModeSet("BICYCLE,TRANSIT"));
-        options.freezeTraverseMode();
-        options.setRoutingContext(graph, v1, v3);
-        tree = aStar.getShortestPathTree(options);
-
-        path = tree.getPath(v3, false);
-        assertNull(path);
-
-        // or even both (assuming walking bikes is disallowed)
+        // or biking + walking (assuming walking bikes is disallowed)
         options = new RoutingRequest(new TraverseModeSet("WALK,BICYCLE,TRANSIT"));
         options.freezeTraverseMode();
         options.setRoutingContext(graph, v1, v3);
@@ -83,8 +74,8 @@ public class TestBikeRental extends TestCase {
                 36.856, "station", 10);
         new StreetBikeRentalLink(station, v2);
         new StreetBikeRentalLink(v2, station);
-        new RentABikeOnEdge(station, station);
-        new RentABikeOffEdge(station, station);
+        new RentABikeOnEdge(station, station, "default");
+        new RentABikeOffEdge(station, station, "default");
         
         // but we can't get off the bike at v3, so we still fail
         options = new RoutingRequest(new TraverseModeSet("WALK,BICYCLE,TRANSIT"));
@@ -100,8 +91,8 @@ public class TestBikeRental extends TestCase {
                 36.857, "station", 10);
         new StreetBikeRentalLink(station2, v3);
         new StreetBikeRentalLink(v3, station2);
-        new RentABikeOnEdge(station2, station2);
-        new RentABikeOffEdge(station2, station2);
+        new RentABikeOnEdge(station2, station2, "default");
+        new RentABikeOffEdge(station2, station2, "default");
         
         // now we succeed!
         options = new RoutingRequest(new TraverseModeSet("WALK,BICYCLE,TRANSIT"));

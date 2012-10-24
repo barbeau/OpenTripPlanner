@@ -41,6 +41,106 @@ otp.util.StringFormattingUtils = {
         return (((sign)?'':'-') + '$' + num + '.' + cents);
     },
 
+    /** */
+    timeSpan : function(startTime, endTime, locale, sep)
+    {
+        var retVal = startTime + sep + endTime;
+        try
+        {
+            if(sep == null)    sep = " - ";
+            if(locale == null) locale = otp.config.locale;
+
+            var tf = locale.time.time_format;
+            var s = startTime.format(tf);
+            var e = endTime.format(tf);
+            retVal = s + sep + e;
+        }
+        catch(e)
+        {
+        }
+
+        return retVal;
+    },
+
+    /** */
+    durationHoursMins : function(durr, locale, sep)
+    {
+        var retVal = durr;
+        try
+        {
+            if(sep == null)    sep = " ";
+            if(locale == null) locale = otp.config.locale;
+
+            if(durr >= 60.0 && locale.CLASS_NAME == otp.locale.English.CLASS_NAME)
+            {
+                var hrs  = Math.floor(durr / 60);
+                var mins = durr % 60;
+
+                var m = (mins == 1) ? locale.time.minute_abbrev : locale.time.minutes_abbrev;
+                var h = (hrs  == 1) ? locale.time.hour_abbrev   : locale.time.hours_abbrev;
+                retVal = hrs + " " + h + sep + mins + " " + m;
+            }
+            else
+            {
+                var m = (mins == 1) ? locale.time.minute_abbrev : locale.time.minutes_abbrev;
+                retVal = durr + " " + m;
+            }
+        }
+        catch(e)
+        {
+        }
+
+        return retVal;
+    },
+
+    /** (1, transfer, transfers) returns '1 transfer' */
+    numSinglePlural : function(numVal, singleStr, pluralStr, sep)
+    {
+        var retVal = "";
+        try
+        {
+            if(sep == null) sep = " ";
+            if(numVal)
+            {
+                if(numVal == 1)
+                    retVal = numVal + sep + singleStr;
+                else
+                    retVal = numVal + sep + pluralStr;
+            }
+        }
+        catch(e)
+        {
+        }
+
+        return retVal;
+    },
+
+
+    /** (2, transfer, transfers) returns 'transfers 2' */
+    singlePluralNum : function(numVal, singleStr, pluralStr, sep)
+    {
+        var retVal = "";
+        try
+        {
+            if(sep == null)    sep = " ";
+            if(locale == null) locale = otp.config.locale;
+
+            if(numVal)
+            {
+                if(numVal == 1)
+                    retVal = singleStr + sep + numVal;
+                else
+                    retVal = pluralStr + sep + numVal;
+            }
+        }
+        catch(e)
+        {
+        }
+
+        return retVal;
+    },
+
+
 
     /** */
     percent : function(inStr, symbol)
@@ -298,6 +398,7 @@ otp.util.StringFormattingUtils = {
         
         return retVal;
     },
+
 
     CLASS_NAME: "otp.util.StringFormattingUtils"
 };

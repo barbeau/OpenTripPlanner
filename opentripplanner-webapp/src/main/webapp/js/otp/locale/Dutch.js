@@ -175,6 +175,12 @@ otp.locale.Dutch = {
         trip_details : "Reisdetails",
         fare         : "Ritprijs",
         fare_symbol  : "\u20ac",
+
+        // TODO  -- used in the Trip Details summary to describe different fares 
+        regular_fare : "",
+        student_fare : "",
+        senior_fare  : "",
+
         travel       : "Reis",
         valid        : "Geldig",
         trip_length  : "Tijd",
@@ -214,6 +220,12 @@ otp.locale.Dutch = {
 
     time:
     {
+        // TODO
+        hour_abbrev    : "hour",
+        hours_abbrev   : "hours",
+        hour           : "hour",
+        hours          : "hours",
+
         minute         : "minuut",
         minutes        : "minuten",
         minute_abbrev  : "min",
@@ -255,7 +267,9 @@ otp.locale.Dutch = {
             intermediate  : "Tussenstops",
             minimize      : "Toon reis met",
             maxWalkDistance: "Maximum loopafstand",
+            walkSpeed     : "Loopsnelheid",
             maxBikeDistance: "Maximum fietsafstand",
+            bikeSpeed     : "Fietssnelheid",
             arriveDepart  : "Vertrek/Aankomst voor",
             mode          : "Reis per",
             wheelchair    : "Rolstoeltoegankelijk", 
@@ -345,6 +359,20 @@ otp.locale.Dutch = {
             ['15000',  '15 km'],
             ['20000',  '20 km'],
             ['30000',  '30 km']
+        ],
+        
+	walkSpeed : 
+        [
+            ['0.278',  '1 km/h'],
+            ['0.556',  '2 km/h'],
+            ['0.833',  '3 km/h'],
+            ['1.111',  '4 km/h'],
+            ['1.389',  '5 km/h'],
+            ['1.667',  '6 km/h'],
+            ['1.944',  '7 km/h'],
+            ['2.222',  '8 km/h'],
+            ['2.500',  '9 km/h'],
+            ['2.778',  '10 km/h']
         ],
     
         mode : 

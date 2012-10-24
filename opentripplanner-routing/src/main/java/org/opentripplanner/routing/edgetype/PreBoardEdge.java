@@ -51,8 +51,10 @@ public class PreBoardEdge extends FreeEdge {
                 s1.setAlightedLocal(true);
             }
 
-            s1.incrementTimeInSeconds(options.minTransferTime / 2);
+            //apply board slack
+            s1.incrementTimeInSeconds(options.getBoardSlack());
             s1.alightTransit();
+            s1.setBackMode(getMode());
             return s1.makeState();
         } else {
             /* Traverse forward: apply stop(pair)-specific costs */
@@ -63,10 +65,6 @@ public class PreBoardEdge extends FreeEdge {
             if (!options.getModes().isTransit())
                 return null;
 
-            // Do not board if the passenger has alighted from a local stop
-            if (s0.isAlightedLocal()) {
-                return null;
-            }
             TransitStop fromVertex = (TransitStop) getFromVertex();
             // Do not board once one has alighted from a local stop
             if (fromVertex.isLocal() && s0.isEverBoarded()) {
@@ -81,7 +79,14 @@ public class PreBoardEdge extends FreeEdge {
              * look in the global transfer table for the rules from the previous stop to this stop.
              */
             long t0 = s0.getTime();
-            long board_after = t0 + options.minTransferTime / 2;
+
+            long slack;
+            if (s0.isEverBoarded()) {
+                slack = options.getTransferSlack() - options.getAlightSlack();
+            } else {
+                slack = options.getBoardSlack();
+            }
+            long board_after = t0 + slack;
             long transfer_penalty = 0;
             if (s0.getLastAlightedTime() != 0) {
                 /* this is a transfer rather than an initial boarding */
@@ -132,6 +137,7 @@ public class PreBoardEdge extends FreeEdge {
             s1.setEverBoarded(true);
             long wait_cost = board_after - t0;
             s1.incrementWeight(wait_cost + transfer_penalty);
+            s1.setBackMode(getMode());
             return s1.makeState();
         }
     }
@@ -144,6 +150,7 @@ public class PreBoardEdge extends FreeEdge {
         // do not include minimum transfer time in heuristic weight
         // (it is path-dependent)
         StateEditor s1 = s0.edit(this);
+        s1.setBackMode(getMode());
         return s1.makeState();
     }
 
